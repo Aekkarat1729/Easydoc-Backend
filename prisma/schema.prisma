@@ -1,0 +1,64 @@
+// ประกาศ datasource สำหรับการเชื่อมต่อกับ PostgreSQL
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")  // ใช้ค่าจาก .env
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Enum สำหรับ Role ของ User
+enum Role {
+  USER
+  ADMIN
+}
+
+// โมเดล User
+model User {
+  id               Int      @id @default(autoincrement())
+  firstName        String   // ชื่อ
+  lastName         String   // นามสกุล
+  email            String   @unique // อีเมล
+  phoneNumber      String   // เบอร์โทรศัพท์
+  password         String   // รหัสผ่าน
+  role             Role     @default(USER)  // เพิ่มฟิลด์ role โดยใช้ enum
+  createdAt        DateTime @default(now()) // วันที่สร้าง
+  updatedAt        DateTime @updatedAt // วันที่อัพเดทล่าสุด
+  documents        Document[]  // ความสัมพันธ์กับ Document
+  mailBoxes        MailBox[]   // ความสัมพันธ์กับ MailBox
+  sentDocs         Sent[]      // ความสัมพันธ์กับ Sent
+}
+
+// โมเดล Sent
+model Sent {
+  id         Int      @id @default(autoincrement())
+  name       String
+  documentId Int
+  document   Document @relation(fields: [documentId], references: [id])
+  userId     Int
+  user       User     @relation(fields: [userId], references: [id])
+  sentAt     DateTime @default(now())
+}
+
+// โมเดล MailBox
+model MailBox {
+  id         Int      @id @default(autoincrement())
+  name       String
+  documents  Document[]  // ความสัมพันธ์กับ Document
+  userId     Int
+  user       User     @relation(fields: [userId], references: [id])
+}
+
+// โมเดล Document
+model Document {
+  id         Int      @id @default(autoincrement())
+  name       String   // ชื่อเอกสาร
+  fileType   String   // ประเภทของไฟล์ (เช่น pdf, docx, jpeg)
+  fileUrl    String   // URL ของไฟล์ที่เก็บในคลาวด์
+  uploadedAt DateTime @default(now()) // วันที่ที่เอกสารถูกอัปโหลด
+  userId     Int
+  user       User     @relation(fields: [userId], references: [id])
+  sent       Sent[]   // ความสัมพันธ์กับ Sent
+  mailBoxes  MailBox[] // ความสัมพันธ์กับ MailBox
+}
