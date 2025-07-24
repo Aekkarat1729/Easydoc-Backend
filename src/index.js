@@ -1,9 +1,8 @@
 require('dotenv').config();
 const Hapi = require('@hapi/hapi');
 const JWT = require('@hapi/jwt');
-const Inert = require('@hapi/inert');  // สำหรับการรับไฟล์
+const Inert = require('@hapi/inert');
 
-// ✅ นำเข้า routes ที่ต้องการ
 const authRoutes = require('./routes/authRoutes');
 const documentRoutes = require('./routes/documentRoutes');
 const mailBoxRoutes = require('./routes/mailBoxRoutes');
@@ -19,20 +18,18 @@ const init = async () => {
     }
   });
 
-  // ลงทะเบียน JWT Plugin และ Inert สำหรับไฟล์
   await server.register([JWT, Inert]);
 
-  // กำหนดกลยุทธ์ JWT
   server.auth.strategy('jwt', 'jwt', {
-    keys: process.env.JWT_SECRET || 'supersecret', // กำหนดคีย์สำหรับ JWT
+    keys: process.env.JWT_SECRET || 'supersecret',
     verify: {
       aud: false,
       iss: false,
       sub: false,
-      nbf: true,  // ตรวจสอบว่า JWT ยังไม่ถูกใช้ก่อน
-      exp: true,  // ตรวจสอบการหมดอายุของ JWT
-      maxAgeSec: 14400, // อายุของ JWT (4 ชั่วโมง)
-      timeSkewSec: 15 // ความคลาดเคลื่อนเวลา
+      nbf: true,
+      exp: true,
+      maxAgeSec: 14400,
+      timeSkewSec: 15
     },
     validate: (artifacts) => ({
       isValid: true,
@@ -43,12 +40,9 @@ const init = async () => {
     })
   });
 
-  //server.auth.default('jwt');  // ใช้การตรวจสอบ JWT สำหรับทุกๆ route
-
-  // ✅ Register routes
   console.log('📦 Registering routes...');
   server.route([
-    ...authRoutes, // อาจจะต้องใช้ auth สำหรับบาง route
+    ...authRoutes,
     ...documentRoutes,
     ...mailBoxRoutes,
     ...sentRoutes,
@@ -56,23 +50,19 @@ const init = async () => {
   ]);
   console.log('✅ Routes registered!');
 
-  // ✅ Test route สำหรับตรวจว่า server ตอบสนองหรือไม่
   server.route({
     method: 'GET',
     path: '/ping',
     options: {
-      auth: false,  // ไม่ต้องการการตรวจสอบ JWT สำหรับ route นี้
+      auth: false,
       handler: () => 'pong'
     }
   });
 
-  // ✅ แสดงตาราง routes ทั้งหมด และจัดกลุ่มตาม tags
   console.log('📃 Routes loaded:');
 
-  // ดึงข้อมูลจาก server.table() และจัดกลุ่มตาม tags
   const routes = server.table();
   const groupedRoutes = routes.reduce((acc, route) => {
-    // ตรวจสอบว่า route มี tags หรือไม่
     if (route.settings.tags) {
       route.settings.tags.forEach(tag => {
         if (!acc[tag]) {
@@ -87,10 +77,9 @@ const init = async () => {
     return acc;
   }, {});
 
-  // แสดง routes ตามหมวดหมู่
   for (const [tag, routes] of Object.entries(groupedRoutes)) {
     console.log(`\n🔹 ${tag}:`);
-    console.table(routes);  // แสดง routes ตามแต่ละหมวดหมู่
+    console.table(routes);
   }
 
   await server.start();

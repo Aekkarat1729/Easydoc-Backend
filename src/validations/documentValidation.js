@@ -1,9 +1,12 @@
-// validations/documentValidation.js
 const { z } = require('zod');
 
-// สร้าง schema สำหรับการอัปโหลดเอกสาร
 const documentSchema = z.object({
-  filePath: z.string().min(1, "File path is required"),  // ไฟล์ต้องมีข้อมูล
+  file: z.object({
+    path: z.string().optional(),
+    filename: z.string().min(1, "Filename is required"),
+    bytes: z.number().optional(),
+    headers: z.object({}).optional()
+  }).refine(file => file.filename, { message: "File is required" })
 });
 
 const idParamSchema = z.object({

@@ -1,4 +1,3 @@
-// routes/documentRoutes.js
 const { uploadDocument, getDocumentById } = require('../controllers/documentController');
 
 module.exports = [
@@ -8,10 +7,13 @@ module.exports = [
     options: {
       auth: 'jwt',
       payload: {
-        maxBytes: 10485760,  // ขีดจำกัดขนาดไฟล์ 10MB
+        maxBytes: 10485760,
         output: 'stream',
-        parse: true,  // ใช้ parse เพื่อให้รับการส่ง multipart/form-data ได้
-        allow: 'multipart/form-data'  // ยอมรับการส่งข้อมูลแบบ multipart/form-data
+        parse: true,
+        allow: 'multipart/form-data',
+        multipart: {
+          output: 'file'
+        }
       },
       handler: uploadDocument.handler
     }
