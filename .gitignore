@@ -3,3 +3,4 @@ node_modules
 .env
 
 /generated/prisma
+src/config/easydocv1-firebase-adminsdk-r4zkx-e42d3aabbc.json
