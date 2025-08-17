@@ -1,11 +1,10 @@
-const { loginUser } = require('../controllers/authController');  // นำเข้าฟังก์ชัน loginUser จาก authController
+const { loginUser } = require('../controllers/authController');
 
 module.exports = [
   {
     method: 'POST',
     path: '/auth/login',
-    options: loginUser,  // กำหนด handler สำหรับ POST /auth/login เป็น loginUser
+    options: loginUser, // ใช้ options ที่กำหนด payload ไว้ใน controller แล้ว
   },
-  
-  // คุณสามารถเพิ่ม route อื่น ๆ สำหรับการลงทะเบียน หรือฟังก์ชันที่เกี่ยวข้องกับผู้ใช้ได้ที่นี่
+  // เพิ่ม route อื่น ๆ ได้ตามต้องการ
 ];

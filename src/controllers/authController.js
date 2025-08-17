@@ -7,27 +7,50 @@ const jwt = require('jsonwebtoken');
 const loginUser = {
   auth: false,
   tags: ['api', 'auth'],
+  // รองรับทั้ง JSON, x-www-form-urlencoded และ form-data (field เท่านั้น)
+  payload: {
+    parse: true,
+    output: 'data',
+    allow: ['application/json', 'application/x-www-form-urlencoded', 'multipart/form-data'],
+    multipart: true
+  },
   handler: async (request, h) => {
-    const { email, password } = request.payload;
+    const { email, password } = request.payload || {};
 
     try {
-      // เรียกใช้งาน getUserByEmail
+      if (!email || !password) {
+        return error(h, 'email & password are required', 400);
+      }
+
+      // ดึง user (รวม password สำหรับตรวจ)
       const user = await userService.getUserByEmail(email);
       if (!user) {
-        return error(h, 'User not found');
+        return error(h, 'User not found', 401);
       }
 
       const isPasswordValid = await bcrypt.compare(password, user.password);
       if (!isPasswordValid) {
-        return error(h, 'Invalid password');
+        return error(h, 'Invalid password', 401);
       }
 
       // สร้าง JWT token
-      const token = jwt.sign({ userId: user.id, role: user.role }, process.env.JWT_SECRET, { expiresIn: '1h' });
+      const token = jwt.sign(
+        { userId: user.id, role: user.role },
+        process.env.JWT_SECRET,
+        { expiresIn: '4h' }
+      );
 
-      return success(h, { token });
+      // ส่งข้อมูลที่ต้องการกลับไป
+      return success(h, {
+        firstName: user.firstName,
+        lastName: user.lastName,
+        role: user.role,
+        email: user.email,
+        token
+      });
     } catch (err) {
-      return error(h, err.message);
+      console.error('LOGIN_ERROR:', err);
+      return error(h, err.message || 'Internal Server Error', 500);
     }
   },
 };
