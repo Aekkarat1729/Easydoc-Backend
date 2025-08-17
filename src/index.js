@@ -4,6 +4,7 @@ const Hapi = require('@hapi/hapi');
 const JWT = require('@hapi/jwt');
 const Inert = require('@hapi/inert');
 
+/* ------------------------------ Routes ------------------------------ */
 const authRoutes = require('./routes/authRoutes');
 const documentRoutes = require('./routes/documentRoutes');
 const sentRoutes = require('./routes/sentRoutes');
@@ -21,32 +22,48 @@ const HOST = process.env.HOST || (NODE_ENV === 'production' ? '0.0.0.0' : 'local
 const MAX_UPLOAD_MB = Number(process.env.MAX_UPLOAD_MB || 10);
 const CORS_ORIGINS = parseOrigins(process.env.CORS_ORIGINS || '*');
 
+// ถ้ามี '*' อยู่ ห้ามเปิด credentials (เบราว์เซอร์ไม่ยอม)
+const CORS_CREDENTIALS = !CORS_ORIGINS.includes('*');
+
 async function init() {
   const server = Hapi.server({
     port: PORT,
     host: HOST,
     router: { stripTrailingSlash: true },
+
     routes: {
+      /* ------------------------------- CORS ------------------------------- */
       cors: {
-        origin: CORS_ORIGINS,           // ['*'] หรือ ['https://foo.com','https://bar.com']
-        credentials: true,
-        additionalHeaders: ['authorization', 'content-type'],
-        additionalExposedHeaders: ['*'],
+        // ตัวอย่าง .env: CORS_ORIGINS=https://app.example.com,http://localhost:5173
+        origin: CORS_ORIGINS,
+        credentials: CORS_CREDENTIALS,
+        // เฮดเดอร์ที่อนุญาตเพิ่มจากค่าปริยาย
+        additionalHeaders: ['accept', 'origin', 'x-requested-with'],
+        // เฮดเดอร์ฝั่ง response ที่อนุญาตให้ JS ฝั่งหน้าอ่านได้
+        additionalExposedHeaders: ['content-length', 'content-range'],
+        // อายุแคชของ preflight (วินาที)
+        maxAge: 86400
       },
+
+      /* ------------------------------ Payload ----------------------------- */
       payload: {
-        maxBytes: MAX_UPLOAD_MB * 1024 * 1024, // default 10MB (แต่ละ route override ได้)
+        maxBytes: MAX_UPLOAD_MB * 1024 * 1024, // 10MB โดยดีฟอลต์
         output: 'file',
         parse: true,
         multipart: { output: 'file' },
-        allow: ['multipart/form-data', 'application/json', 'application/x-www-form-urlencoded']
-      },
+        allow: [
+          'multipart/form-data',
+          'application/json',
+          'application/x-www-form-urlencoded'
+        ]
+      }
     }
   });
 
-  // Plugins
+  /* ------------------------------ Plugins ------------------------------ */
   await server.register([JWT, Inert]);
 
-  // JWT Strategy
+  /* ----------------------------- JWT Strategy ---------------------------- */
   server.auth.strategy('jwt', 'jwt', {
     keys: process.env.JWT_SECRET || 'supersecret',
     verify: {
@@ -66,10 +83,9 @@ async function init() {
       }
     })
   });
-  // ไม่บังคับ default auth เพราะบาง route ไม่ต้องใช้
-  // server.auth.default('jwt');
+  // server.auth.default('jwt'); // ถ้าต้องการบังคับทุก route ให้ใช้ JWT
 
-  // Basic health checks
+  /* ----------------------------- Health checks ---------------------------- */
   server.route({
     method: 'GET',
     path: '/',
@@ -84,7 +100,7 @@ async function init() {
     handler: () => 'pong'
   });
 
-  // Register app routes
+  /* ----------------------------- App routes ------------------------------ */
   console.log('📦 Registering routes...');
   server.route([
     ...authRoutes,
@@ -94,11 +110,11 @@ async function init() {
   ]);
   console.log('✅ Routes registered!');
 
-  // Pretty print routes by tag
+  /* ------------------------- Pretty print by tags ------------------------ */
   console.log('📃 Routes loaded:');
   const routes = server.table();
   const grouped = routes.reduce((acc, r) => {
-    const tags = r.settings && r.settings.tags ? r.settings.tags : [];
+    const tags = r.settings?.tags || [];
     tags.forEach(tag => {
       acc[tag] ||= [];
       acc[tag].push({ method: r.method.toUpperCase(), path: r.path });
@@ -110,7 +126,7 @@ async function init() {
     console.table(list);
   }
 
-  // Unified error response (optional nice-to-have)
+  /* -------------------------- Unified error shape ------------------------ */
   server.ext('onPreResponse', (request, h) => {
     const res = request.response;
     if (res.isBoom) {
@@ -129,7 +145,7 @@ async function init() {
   await server.start();
   console.log(`🚀 Server running on ${server.info.uri} (env=${NODE_ENV})`);
 
-  // Graceful shutdown for Render/containers
+  /* --------------------------- Graceful shutdown ------------------------- */
   const shutdown = async (signal) => {
     try {
       console.log(`\n🛑 Received ${signal}, stopping server...`);
