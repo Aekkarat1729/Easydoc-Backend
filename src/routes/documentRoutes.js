@@ -1,3 +1,4 @@
+// documentRoutes.js
 const { uploadDocument, getDocumentById } = require('../controllers/documentController');
 
 module.exports = [
@@ -7,13 +8,11 @@ module.exports = [
     options: {
       auth: 'jwt',
       payload: {
-        maxBytes: 10485760,
-        output: 'stream',
+        maxBytes: 10 * 1024 * 1024, // 10MB
+        output: 'file',             // ให้ Hapi เขียนเป็นไฟล์ temp แล้วให้ path
         parse: true,
         allow: 'multipart/form-data',
-        multipart: {
-          output: 'file'
-        }
+        multipart: { output: 'file' }
       },
       handler: uploadDocument.handler
     }
