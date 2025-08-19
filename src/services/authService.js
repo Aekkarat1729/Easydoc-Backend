@@ -1,33 +1,48 @@
+// src/services/sentService.js
 const { PrismaClient } = require('@prisma/client');
-const jwt = require('../utils/jwt'); // เผื่อไว้หากมีที่อื่นเรียกใช้ wrapper นี้
 const prisma = new PrismaClient();
 
-const getUserByEmail = async (email) => {
-  // เลือกเฉพาะ field ที่จำเป็น (ต้องมี password สำหรับ compare)
-  return prisma.user.findUnique({
-    where: { email },
-    select: {
-      id: true,
-      firstName: true,
-      lastName: true,
-      email: true,
-      role: true,
-      password: true
+const sendDocument = async (data) => {
+  try {
+    if (data.isForwarded && data.parentSentId) {
+      return await prisma.sent.create({
+        data: {
+          documentId: data.documentId,
+          senderId: data.senderId,
+          receiverId: data.receiverId,
+          number: data.number,
+          category: data.category,
+          description: data.description,
+          // 👇 เพิ่มใหม่
+          subject: data.subject,
+          remark: data.remark,
+          status: data.status,
+          isForwarded: true,
+          parentSentId: data.parentSentId,
+          forwarded: { connect: { id: data.parentSentId } },
+          sentAt: new Date(),
+        }
+      });
+    } else {
+      return await prisma.sent.create({
+        data: {
+          documentId: data.documentId,
+          senderId: data.senderId,
+          receiverId: data.receiverId,
+          number: data.number,
+          category: data.category,
+          description: data.description,
+          // 👇 เพิ่มใหม่
+          subject: data.subject,
+          remark: data.remark,
+          status: data.status,
+          sentAt: new Date(),
+        }
+      });
     }
-  });
+  } catch (err) {
+    throw new Error('Failed to send document: ' + err.message);
+  }
 };
 
-const createUser = async (data) => {
-  return prisma.user.create({ data });
-};
-
-// utility เผื่อใช้ภายนอก
-const generateToken = (user) => {
-  return jwt.sign({ userId: user.id, role: user.role });
-};
-
-module.exports = {
-  getUserByEmail,
-  createUser,
-  generateToken,
-};
+module.exports = { sendDocument };

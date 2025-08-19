@@ -1,7 +1,9 @@
+// src/controllers/authController.js
 const bcrypt = require('bcryptjs');
 const userService = require('../services/userService');
 const { success, error } = require('../utils/responseFormatter');
 const jwt = require('jsonwebtoken');
+const { mapRoleToNumber } = require('../utils/roleMapper');
 
 // ฟังก์ชัน login
 const loginUser = {
@@ -33,18 +35,22 @@ const loginUser = {
         return error(h, 'Invalid password', 401);
       }
 
-      // สร้าง JWT token
+      // สร้าง JWT token (เก็บ role เป็น string เอาไว้ใน token เพื่อความชัดเจน)
       const token = jwt.sign(
         { userId: user.id, role: user.role },
         process.env.JWT_SECRET,
         { expiresIn: '4h' }
       );
 
+      // แปลง role string -> number สำหรับ frontend ที่ต้องการตัวเลข
+      const roleNumber = mapRoleToNumber(user.role);
+
       // ส่งข้อมูลที่ต้องการกลับไป
       return success(h, {
         firstName: user.firstName,
         lastName: user.lastName,
-        role: user.role,
+        role: user.role,        // string: 'ADMIN'|'OFFICER'|'USER' (เก็บไว้ด้วย)
+        roleNumber,             // number: 1|2|3 เพื่อ frontend ใช้ง่าย
         email: user.email,
         token
       });

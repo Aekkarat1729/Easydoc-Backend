@@ -13,6 +13,9 @@ const sentSchema = z.object({
   number: z.string().optional(),
   category: z.string().optional(),
   description: z.string().optional(),
+  // 👇 เพิ่มใหม่
+  subject: z.string().optional(),   // ชื่อเรื่อง
+  remark: z.string().optional(),    // หมายเหตุ
   status: z.nativeEnum(DocumentStatus).optional(),
   isForwarded: z.boolean().optional(),
   parentSentId: z.coerce.number().int().optional(),

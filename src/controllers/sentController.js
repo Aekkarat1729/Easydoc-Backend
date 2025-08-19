@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { PrismaClient, DocumentStatus } = require('@prisma/client');
 const admin = require('firebase-admin');
-
+const isOfficer = require('../utils/isOfficer');
 const prisma = new PrismaClient();
 
 /* -------------------------- Firebase Initialization ------------------------- */
@@ -134,8 +134,11 @@ const sendDocumentWithFile = {
   handler: async (request, h) => {
     const tempFile = request.payload?.file;
     try {
+      isOfficer(request); // ตรวจสอบว่าเป็น Officer หรือไม่
       const senderId = request.auth.credentials.userId;
-      const { receiverEmail, number, category, description, status } = request.payload;
+
+      // 👇 อ่าน subject / remark เพิ่มจาก payload
+      const { receiverEmail, number, category, description, subject, remark, status } = request.payload;
       const file = tempFile;
 
       if (!file || !file.filename) {
@@ -196,6 +199,9 @@ const sendDocumentWithFile = {
         number,
         category,
         description,
+        // 👇 บันทึกฟิลด์ใหม่
+        subject,
+        remark,
         status: statusNormalized,
         isForwarded: false,
         parentSentId: null,
@@ -247,7 +253,7 @@ const sendDocumentWithFile = {
 /**
  * ส่งต่อเอกสารโดยใช้ไฟล์เดิม (ไม่อัปโหลดใหม่)
  * Method: POST /sent/forward  (application/json หรือ x-www-form-urlencoded)
- * Body: { parentSentId? , documentId? , receiverEmail, number?, category?, description?, status? }
+ * Body: { parentSentId? , documentId? , receiverEmail, number?, category?, description?, subject?, remark?, status? }
  */
 const forwardDocument = {
   auth: 'jwt',
@@ -268,6 +274,9 @@ const forwardDocument = {
         number,
         category,
         description,
+        // 👇 อ่านฟิลด์ใหม่
+        subject,
+        remark,
         status
       } = request.payload || {};
 
@@ -310,6 +319,9 @@ const forwardDocument = {
         number,
         category,
         description,
+        // 👇 ใส่ฟิลด์ใหม่
+        subject,
+        remark,
         status: statusNormalized,
         isForwarded: true,
         parentSentId: parent?.id ?? null,

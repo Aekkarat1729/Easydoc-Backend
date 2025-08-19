@@ -1,4 +1,5 @@
-// เชื่อมต่อกับ PostgreSQL
+// prisma/schema.prisma
+
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
@@ -8,9 +9,11 @@ generator client {
   provider = "prisma-client-js"
 }
 
+/* ---------- Enums ---------- */
 enum Role {
   USER
   ADMIN
+  OFFICER   // ✅ เพิ่ม
 }
 
 enum DocumentStatus {
@@ -22,71 +25,72 @@ enum DocumentStatus {
   ARCHIVED
 }
 
+/* ---------- Models ---------- */
 model User {
-  id          Int      @id @default(autoincrement())
-  firstName   String
-  lastName    String
-  email       String   @unique
-  phoneNumber String
-  password    String
-  role        Role     @default(USER)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id              Int                 @id @default(autoincrement())
+  firstName       String
+  lastName        String
+  email           String              @unique
+  phoneNumber     String
+  password        String
+  role            Role                @default(USER)
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
 
-  documents    Document[]
-  sentDocs     Sent[]     @relation("Sender")
-  receivedDocs Sent[]     @relation("Receiver")
-
-  // ฝั่งตรงข้ามของ Sent.statusBy
-  statusChanges Sent[] @relation("StatusBy")
-
-  // 👇 เพิ่มฝั่งตรงข้ามของ SentStatusHistory.changedBy
+  documents       Document[]
+  sentDocs        Sent[]              @relation("Sender")
+  receivedDocs    Sent[]              @relation("Receiver")
+  statusChanges   Sent[]              @relation("StatusBy")
   statusHistories SentStatusHistory[] @relation("UserStatusHistory")
 }
 
 model Document {
-  id         Int      @id @default(autoincrement())
+  id         Int       @id @default(autoincrement())
   name       String
   fileType   String
   fileUrl    String
-  uploadedAt DateTime @default(now())
+  uploadedAt DateTime  @default(now())
 
-  userId Int
-  user   User   @relation(fields: [userId], references: [id])
-  sent   Sent[] @relation("DocumentSent")
+  userId     Int
+  user       User      @relation(fields: [userId], references: [id])
+  sent       Sent[]    @relation("DocumentSent")
 }
 
 model Sent {
-  id         Int @id @default(autoincrement())
-  documentId Int
-  senderId   Int
-  receiverId Int
+  id           Int             @id @default(autoincrement())
+  documentId   Int
+  senderId     Int
+  receiverId   Int
 
-  number      String?
-  category    String?
-  description String?
-  status      DocumentStatus @default(PENDING)
+  number       String?
+  category     String?
+  description  String?
 
-  isForwarded  Boolean @default(false)
+  // ✅ เพิ่มฟิลด์ใหม่
+  subject      String?         // ชื่อเรื่อง
+  remark       String?         // หมายเหตุ
+
+  status       DocumentStatus  @default(PENDING)
+
+  isForwarded  Boolean         @default(false)
   parentSentId Int?
-  parentSent   Sent?   @relation("Forward", fields: [parentSentId], references: [id])
-  forwarded    Sent[]  @relation("Forward")
+  parentSent   Sent?           @relation("Forward", fields: [parentSentId], references: [id])
+  forwarded    Sent[]          @relation("Forward")
 
-  threadId Int?
-  depth    Int  @default(0)
+  threadId         Int?
+  depth            Int          @default(0)
+  sentAt           DateTime     @default(now())
+  receivedAt       DateTime?
+  readAt           DateTime?
+  archivedAt       DateTime?
+  statusChangedAt  DateTime?
 
-  sentAt          DateTime  @default(now())
-  receivedAt      DateTime?
-  readAt          DateTime?
-  archivedAt      DateTime?
-  statusChangedAt DateTime?
+  statusById   Int?
+  statusBy     User?           @relation("StatusBy", fields: [statusById], references: [id])
 
-  statusById Int?
-  statusBy   User? @relation("StatusBy", fields: [statusById], references: [id])
-
-  document Document @relation("DocumentSent", fields: [documentId], references: [id])
-  sender   User     @relation("Sender", fields: [senderId], references: [id])
-  receiver User     @relation("Receiver", fields: [receiverId], references: [id])
+  document     Document        @relation("DocumentSent", fields: [documentId], references: [id])
+  sender       User            @relation("Sender", fields: [senderId], references: [id])
+  receiver     User            @relation("Receiver", fields: [receiverId], references: [id])
 
   statusHistory SentStatusHistory[]
 
@@ -96,16 +100,14 @@ model Sent {
 }
 
 model SentStatusHistory {
-  id          Int            @id @default(autoincrement())
+  id          Int             @id @default(autoincrement())
   sentId      Int
   from        DocumentStatus
   to          DocumentStatus
   changedById Int
-  changedAt   DateTime       @default(now())
+  changedAt   DateTime        @default(now())
   note        String?
 
-  sent Sent @relation(fields: [sentId], references: [id], onDelete: Cascade)
-
-  // 👇 ตั้งชื่อ relation ให้ตรงกับที่เพิ่มใน User
+  sent      Sent @relation(fields: [sentId], references: [id], onDelete: Cascade)
   changedBy User @relation("UserStatusHistory", fields: [changedById], references: [id])
 }
