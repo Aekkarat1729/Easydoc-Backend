@@ -4,7 +4,30 @@ const { createUserSchema, updateUserSchema } = require('../validations/userValid
 const validateZod = require('../validations/validateZod');
 const { success, created, notFound, error } = require('../utils/responseFormatter');
 const isAdmin = require('../utils/isAdmin');
+const isOfficer = require('../utils/isOfficer'); // ✅ เพิ่ม
 const { idParamSchema } = require('../validations/userValidation');
+
+// ✅ ใหม่: ดึงรายชื่อผู้ใช้แบบย่อ (Officer/Admin เท่านั้น)
+const getUsersForOfficer = {
+  auth: 'jwt',
+  tags: ['api', 'users'],
+  handler: async (request, h) => {
+    try {
+      // อนุญาต Officer หรือ Admin
+      try {
+        isOfficer(request);
+      } catch (_) {
+        isAdmin(request); // ถ้าไม่ใช่ Officer ต้องเป็น Admin
+      }
+
+      const users = await userService.getUsersForOfficer();
+      // ส่งกลับเฉพาะ id, email, firstName, lastName อยู่แล้ว
+      return success(h, users || []);
+    } catch (err) {
+      return error(h, err.message);
+    }
+  },
+};
 
 // ฟังก์ชันดึงข้อมูลผู้ใช้ทั้งหมด
 const getAllUsers = {
@@ -48,11 +71,11 @@ const createUser = {
     const { firstName, lastName, email, phoneNumber, password, role } = request.payload;
     try {
       const user = await userService.createUser({
-        firstName, 
-        lastName, 
-        email, 
-        phoneNumber, 
-        password, 
+        firstName,
+        lastName,
+        email,
+        phoneNumber,
+        password,
         role
       });
       return created(h, user);
@@ -100,4 +123,14 @@ const deleteUser = {
   },
 };
 
-module.exports = { getAllUsers, getUserById, createUser, updateUser, deleteUser };
+module.exports = {
+  // ✅ ใหม่
+  getUsersForOfficer,
+
+  // เดิม
+  getAllUsers,
+  getUserById,
+  createUser,
+  updateUser,
+  deleteUser
+};

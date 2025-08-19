@@ -4,6 +4,7 @@ const userService = require('../services/userService');
 const { success, error } = require('../utils/responseFormatter');
 const jwt = require('jsonwebtoken');
 const { mapRoleToNumber } = require('../utils/roleMapper');
+const { id } = require('zod/v4/locales');
 
 // ฟังก์ชัน login
 const loginUser = {
@@ -47,6 +48,7 @@ const loginUser = {
 
       // ส่งข้อมูลที่ต้องการกลับไป
       return success(h, {
+        id: user.id,
         firstName: user.firstName,
         lastName: user.lastName,
         role: user.role,        // string: 'ADMIN'|'OFFICER'|'USER' (เก็บไว้ด้วย)
@@ -60,5 +62,7 @@ const loginUser = {
     }
   },
 };
+
+
 
 module.exports = { loginUser };

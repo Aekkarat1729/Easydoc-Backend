@@ -1,4 +1,3 @@
-// src/services/userService.js
 const bcrypt = require('bcryptjs');
 const { PrismaClient } = require('@prisma/client');
 const { mapRoleToNumber, mapNumberToRole } = require('../utils/roleMapper');
@@ -11,14 +10,12 @@ const prisma = new PrismaClient();
 function toEnumRole(input) {
   if (input == null) return undefined;
 
-  // ถ้าเป็นเลขหรือสตริงตัวเลข
   if (typeof input === 'number' || /^[0-9]+$/.test(String(input))) {
     const mapped = mapNumberToRole(Number(input));
     if (!mapped) throw new Error('Invalid role number. Use 1=ADMIN, 2=OFFICER, 3=USER');
     return mapped;
   }
 
-  // ถ้าเป็นข้อความ
   const r = String(input).trim().toUpperCase();
   if (['ADMIN', 'OFFICER', 'USER'].includes(r)) return r;
 
@@ -36,6 +33,23 @@ function sanitizeUser(user) {
 }
 
 /* ------------------------------- Services ------------------------------- */
+
+// ✅ ใหม่: สำหรับ Officer (และ Admin) ใช้ใน endpoint /userforofficer
+const getUsersForOfficer = async () => {
+  try {
+    const users = await prisma.user.findMany({
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+      }
+    });
+    return users; // ไม่มี password อยู่แล้ว
+  } catch (err) {
+    throw new Error('Failed to fetch users for officer: ' + err.message);
+  }
+};
 
 // ดึงข้อมูลผู้ใช้ทั้งหมด (ไม่คืน password)
 const getAllUsers = async () => {
@@ -118,7 +132,7 @@ const createUser = async ({ firstName, lastName, email, phoneNumber, password, r
   }
 };
 
-// อัปเดตผู้ใช้ (ถ้ามี password ใหม่ให้แฮช, ถ้ามี role ใหม่รับได้ทั้งเลขและข้อความ)
+// อัปเดตผู้ใช้
 const updateUser = async (id, data) => {
   try {
     const updateData = { ...data };
@@ -187,6 +201,10 @@ const getUserByEmail = async (email) => {
 };
 
 module.exports = {
+  // ใหม่
+  getUsersForOfficer,
+
+  // เดิม
   getAllUsers,
   getUserById,
   createUser,

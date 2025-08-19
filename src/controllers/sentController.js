@@ -8,6 +8,15 @@ const admin = require('firebase-admin');
 const isOfficer = require('../utils/isOfficer');
 const prisma = new PrismaClient();
 
+// ✅ นำเข้า service ที่ต้องใช้
+const {
+  getSentById: fetchSentById,     // เปลี่ยนชื่อกันชนกับ handler
+  getSentByIdWithChain
+} = require('../services/sentService');
+
+// ✅ ใช้ zod schema สำหรับตรวจ params ใน handler
+const { idParamSchema } = require('../validations/sentValidation');
+
 /* -------------------------- Firebase Initialization ------------------------- */
 function ensureFirebaseInit() {
   if (admin.apps.length) return;
@@ -252,8 +261,7 @@ const sendDocumentWithFile = {
 
 /**
  * ส่งต่อเอกสารโดยใช้ไฟล์เดิม (ไม่อัปโหลดใหม่)
- * Method: POST /sent/forward  (application/json หรือ x-www-form-urlencoded)
- * Body: { parentSentId? , documentId? , receiverEmail, number?, category?, description?, subject?, remark?, status? }
+ * Method: POST /sent/forward
  */
 const forwardDocument = {
   auth: 'jwt',
@@ -274,7 +282,6 @@ const forwardDocument = {
         number,
         category,
         description,
-        // 👇 อ่านฟิลด์ใหม่
         subject,
         remark,
         status
@@ -319,7 +326,6 @@ const forwardDocument = {
         number,
         category,
         description,
-        // 👇 ใส่ฟิลด์ใหม่
         subject,
         remark,
         status: statusNormalized,
@@ -373,7 +379,6 @@ const forwardDocument = {
 /**
  * อัปเดตสถานะ (พร้อมบันทึกเวลา + history)
  * PATCH /sent/{id}/status
- * Body: { status: "RECEIVED" | "READ" | "DONE" | "ARCHIVED" | ... }
  */
 const updateSentStatus = {
   auth: 'jwt',
@@ -594,13 +599,74 @@ const getSentMail = {
   }
 };
 
+/** ✅ GET /sent/chain/{id} : ดึง chain เต็ม (ancestor + descendants) */
+const getSentChainById = {
+  auth: 'jwt',
+  tags: ['api', 'sent'],
+  handler: async (request, h) => {
+    try {
+      const parsed = idParamSchema.safeParse(request.params);
+      if (!parsed.success) {
+        return h.response({ success: false, message: 'Invalid id' }).code(400);
+      }
+      const { id } = parsed.data;
+
+      const result = await getSentByIdWithChain(id);
+
+      return h.response({
+        success: true,
+        rootId: result.rootId,
+        threadCount: result.threadCount,
+        data: {
+          base: result.base,
+          pathFromRoot: result.pathFromRoot,
+          forwardsFromThis: result.forwardsFromThis,
+          fullChain: result.fullChain,
+        }
+      }).code(200);
+    } catch (err) {
+      if (err.code === 'NOT_FOUND' || /Sent not found/i.test(err.message)) {
+        return h.response({ success: false, message: 'Not found' }).code(404);
+      }
+      console.error('Error fetching sent chain:', err);
+      return h.response({ success: false, message: err.message }).code(500);
+    }
+  }
+};
+
+/** ✅ GET /sent/{id} : ดึงเรคคอร์ดเดียวตาม id */
+const getSentById = {
+  auth: 'jwt',
+  tags: ['api', 'sent'],
+  handler: async (request, h) => {
+    try {
+      const parsed = idParamSchema.safeParse(request.params);
+      if (!parsed.success) {
+        return h.response({ success: false, message: 'Invalid id' }).code(400);
+      }
+      const { id } = parsed.data;
+
+      const data = await fetchSentById(id);
+      return h.response({ success: true, data }).code(200);
+    } catch (err) {
+      if (/Sent not found/i.test(err.message)) {
+        return h.response({ success: false, message: 'Not found' }).code(404);
+      }
+      console.error('Error fetching sent by id:', err);
+      return h.response({ success: false, message: err.message }).code(500);
+    }
+  }
+};
+
 module.exports = {
   sendDocumentWithFile,
   forwardDocument,
   updateSentStatus,
+  getSentChainById,
   getThreadBySentId,
   getStatusHistory,
   getAllMail,
   getInbox,
   getSentMail,
+  getSentById
 };
