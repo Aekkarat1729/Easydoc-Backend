@@ -141,4 +141,13 @@ const getSentByIdWithChain = async (id) => {
   };
 };
 
-module.exports = { sendDocument, getSentById, getSentByIdWithChain };
+/** ✅ สร้างเรคคอร์ด "ตอบกลับ" (ไม่รวมอัปโหลดไฟล์) */
+const replyDocument = async (data) => {
+  try {
+    return await prisma.sent.create({ data });
+  } catch (err) {
+    throw new Error('Failed to reply: ' + err.message);
+  }
+};
+
+module.exports = { sendDocument, getSentById, getSentByIdWithChain, replyDocument };

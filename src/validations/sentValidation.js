@@ -21,4 +21,15 @@ const sentSchema = z.object({
   parentSentId: z.coerce.number().int().optional(),
 });
 
-module.exports = { idParamSchema, sentSchema };
+/** ✅ schema สำหรับการตอบกลับ */
+const replySchema = z.object({
+  parentSentId: z.coerce.number().int().positive(),
+  message: z.string().min(1, 'message is required'), // map -> description
+  remark: z.string().optional(),
+  subject: z.string().optional(),
+  number: z.string().optional(),
+  category: z.string().optional(),
+  status: z.nativeEnum(DocumentStatus).optional()
+});
+
+module.exports = { idParamSchema, sentSchema, replySchema };

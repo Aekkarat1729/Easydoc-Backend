@@ -11,11 +11,15 @@ const {
   // ✅ ใหม่
   getSentChainById,
   getSentById,
+  replyToSent,        // <== เพิ่ม handler ตอบกลับ
 } = require('../controllers/sentController');
 
 module.exports = [
   { method: 'POST',  path: '/sent',               options: sendDocumentWithFile },
   { method: 'POST',  path: '/sent/forward',       options: forwardDocument },
+  // ✅ ใหม่: ตอบกลับ
+  { method: 'POST',  path: '/sent/reply',         options: replyToSent },
+
   { method: 'PATCH', path: '/sent/{id}/status',   options: updateSentStatus },
 
   // ✅ chain แบบเต็ม (ancestor + descendants)
@@ -28,6 +32,6 @@ module.exports = [
   { method: 'GET',   path: '/inbox',              options: getInbox },
   { method: 'GET',   path: '/sentmail',           options: getSentMail },
 
-  // ✅ ใหม่: GetsentById (ดึงรายการเดียว)
+  // ✅ ดึงรายการเดียว
   { method: 'GET',   path: '/sent/{id}',          options: getSentById },
 ];
