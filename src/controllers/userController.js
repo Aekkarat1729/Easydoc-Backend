@@ -1,27 +1,29 @@
-const bcrypt = require('bcryptjs');
+// src/controllers/userController.js
 const userService = require('../services/userService');
-const { createUserSchema, updateUserSchema } = require('../validations/userValidation');
-const validateZod = require('../validations/validateZod');
+const { createUserSchema, updateUserSchema, idParamSchema } = require('../validations/userValidation');
 const { success, created, notFound, error } = require('../utils/responseFormatter');
 const isAdmin = require('../utils/isAdmin');
-const isOfficer = require('../utils/isOfficer'); // ✅ เพิ่ม
-const { idParamSchema } = require('../validations/userValidation');
+const isOfficer = require('../utils/isOfficer');
 
-// ✅ ใหม่: ดึงรายชื่อผู้ใช้แบบย่อ (Officer/Admin เท่านั้น)
+// helper: แปลง zod error เป็น response 400 ที่อ่านง่าย
+function replyZodError(h, zodError) {
+  return h.response({
+    success: false,
+    statusCode: 400,
+    error: 'Bad Request',
+    message: 'Validation error',
+    details: zodError.format?.() || zodError
+  }).code(400);
+}
+
+// Officer/Admin เท่านั้น: รายชื่อย่อ
 const getUsersForOfficer = {
   auth: 'jwt',
   tags: ['api', 'users'],
   handler: async (request, h) => {
     try {
-      // อนุญาต Officer หรือ Admin
-      try {
-        isOfficer(request);
-      } catch (_) {
-        isAdmin(request); // ถ้าไม่ใช่ Officer ต้องเป็น Admin
-      }
-
+      try { isOfficer(request); } catch { isAdmin(request); }
       const users = await userService.getUsersForOfficer();
-      // ส่งกลับเฉพาะ id, email, firstName, lastName อยู่แล้ว
       return success(h, users || []);
     } catch (err) {
       return error(h, err.message);
@@ -29,13 +31,12 @@ const getUsersForOfficer = {
   },
 };
 
-// ฟังก์ชันดึงข้อมูลผู้ใช้ทั้งหมด
 const getAllUsers = {
   auth: 'jwt',
   tags: ['api', 'users'],
   handler: async (request, h) => {
     try {
-      isAdmin(request); // เช็คสิทธิ์ของ admin
+      isAdmin(request);
       const users = await userService.getAllUsers();
       return success(h, users || []);
     } catch (err) {
@@ -44,16 +45,14 @@ const getAllUsers = {
   },
 };
 
-// ฟังก์ชันดึงข้อมูลผู้ใช้ตาม id
 const getUserById = {
   auth: 'jwt',
   tags: ['api', 'users'],
-  validate: {
-    params: validateZod(idParamSchema),
-  },
   handler: async (request, h) => {
+    const parsed = idParamSchema.safeParse(request.params);
+    if (!parsed.success) return replyZodError(h, parsed.error);
     try {
-      const user = await userService.getUserById(Number(request.params.id));
+      const user = await userService.getUserById(Number(parsed.data.id));
       if (!user) return notFound(h);
       return success(h, user);
     } catch (err) {
@@ -62,22 +61,21 @@ const getUserById = {
   },
 };
 
-// ฟังก์ชันสร้างผู้ใช้ใหม่
+// ✅ กำหนด payload เพื่อให้ parse JSON ได้แน่นอน
 const createUser = {
-  auth: false, // ไม่ต้องใช้การตรวจสอบ JWT สำหรับการลงทะเบียน
+  auth: false,
   tags: ['api', 'users'],
-  validate: { payload: validateZod(createUserSchema) },
+  payload: {
+    parse: true,
+    output: 'data',
+    allow: ['application/json', 'application/x-www-form-urlencoded']
+  },
   handler: async (request, h) => {
-    const { firstName, lastName, email, phoneNumber, password, role } = request.payload;
+    const parsed = createUserSchema.safeParse(request.payload);
+    if (!parsed.success) return replyZodError(h, parsed.error);
+
     try {
-      const user = await userService.createUser({
-        firstName,
-        lastName,
-        email,
-        phoneNumber,
-        password,
-        role
-      });
+      const user = await userService.createUser(parsed.data);
       return created(h, user);
     } catch (err) {
       return error(h, err.message);
@@ -85,22 +83,23 @@ const createUser = {
   },
 };
 
-// ฟังก์ชันอัปเดตข้อมูลผู้ใช้
 const updateUser = {
   auth: 'jwt',
   tags: ['api', 'users'],
-  validate: {
-    params: validateZod(idParamSchema),
-    payload: validateZod(updateUserSchema),
+  payload: {
+    parse: true,
+    output: 'data',
+    allow: ['application/json', 'application/x-www-form-urlencoded']
   },
   handler: async (request, h) => {
-    const { id } = request.params;
-    let data = { ...request.payload };
-    if (data.password) {
-      data.password = await bcrypt.hash(data.password, 10); // แฮชรหัสผ่านใหม่
-    }
+    const parsedId = idParamSchema.safeParse(request.params);
+    if (!parsedId.success) return replyZodError(h, parsedId.error);
+
+    const parsedPayload = updateUserSchema.safeParse(request.payload || {});
+    if (!parsedPayload.success) return replyZodError(h, parsedPayload.error);
+
     try {
-      const updated = await userService.updateUser(Number(id), data);
+      const updated = await userService.updateUser(Number(parsedId.data.id), parsedPayload.data);
       return success(h, updated);
     } catch (err) {
       return error(h, err.message);
@@ -108,14 +107,16 @@ const updateUser = {
   },
 };
 
-// ฟังก์ชันลบผู้ใช้
 const deleteUser = {
   auth: 'jwt',
   tags: ['api', 'users'],
-  validate: { params: validateZod(idParamSchema) },
   handler: async (request, h) => {
+    const parsedId = idParamSchema.safeParse(request.params);
+    if (!parsedId.success) return replyZodError(h, parsedId.error);
+
     try {
-      await userService.deleteUser(Number(request.params.id));
+      isAdmin(request);
+      await userService.deleteUser(Number(parsedId.data.id));
       return success(h, 'User deleted');
     } catch (err) {
       return error(h, err.message);
@@ -124,10 +125,7 @@ const deleteUser = {
 };
 
 module.exports = {
-  // ✅ ใหม่
   getUsersForOfficer,
-
-  // เดิม
   getAllUsers,
   getUserById,
   createUser,

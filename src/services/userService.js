@@ -1,3 +1,4 @@
+// src/services/userService.js
 const bcrypt = require('bcryptjs');
 const { PrismaClient } = require('@prisma/client');
 const { mapRoleToNumber, mapNumberToRole } = require('../utils/roleMapper');
@@ -6,7 +7,6 @@ const prisma = new PrismaClient();
 
 /* ------------------------------ Helpers ------------------------------ */
 
-// แปลงอินพุต role (string/number) -> enum string ของ Prisma
 function toEnumRole(input) {
   if (input == null) return undefined;
 
@@ -22,48 +22,32 @@ function toEnumRole(input) {
   throw new Error('Invalid role. Use ADMIN/OFFICER/USER or 1/2/3');
 }
 
-// ตัด password ออกจากผลลัพธ์ + เพิ่ม roleNumber เพื่อให้ง่ายกับ frontend
 function sanitizeUser(user) {
   if (!user) return user;
   const { password, ...rest } = user;
-  return {
-    ...rest,
-    roleNumber: mapRoleToNumber(user.role), // 1|2|3
-  };
+  return { ...rest, roleNumber: mapRoleToNumber(user.role) };
 }
 
 /* ------------------------------- Services ------------------------------- */
 
-// ✅ ใหม่: สำหรับ Officer (และ Admin) ใช้ใน endpoint /userforofficer
+// สำหรับ Officer/Admin ใช้กับ /userforofficer
 const getUsersForOfficer = async () => {
   try {
     const users = await prisma.user.findMany({
-      select: {
-        id: true,
-        email: true,
-        firstName: true,
-        lastName: true,
-      }
+      select: { id: true, email: true, firstName: true, lastName: true }
     });
-    return users; // ไม่มี password อยู่แล้ว
+    return users;
   } catch (err) {
     throw new Error('Failed to fetch users for officer: ' + err.message);
   }
 };
 
-// ดึงข้อมูลผู้ใช้ทั้งหมด (ไม่คืน password)
 const getAllUsers = async () => {
   try {
     const users = await prisma.user.findMany({
       select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-        email: true,
-        phoneNumber: true,
-        role: true,
-        createdAt: true,
-        updatedAt: true,
+        id: true, firstName: true, lastName: true, email: true,
+        phoneNumber: true, role: true, createdAt: true, updatedAt: true,
       }
     });
     return users.map(sanitizeUser);
@@ -72,20 +56,13 @@ const getAllUsers = async () => {
   }
 };
 
-// ดึงข้อมูลผู้ใช้ตาม id (ไม่คืน password)
 const getUserById = async (id) => {
   try {
     const user = await prisma.user.findUnique({
       where: { id: Number(id) },
       select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-        email: true,
-        phoneNumber: true,
-        role: true,
-        createdAt: true,
-        updatedAt: true,
+        id: true, firstName: true, lastName: true, email: true,
+        phoneNumber: true, role: true, createdAt: true, updatedAt: true,
       }
     });
     if (!user) throw new Error('User not found');
@@ -95,44 +72,30 @@ const getUserById = async (id) => {
   }
 };
 
-// สร้างผู้ใช้ใหม่ (รับ role ได้ทั้งเลขและข้อความ), แฮชรหัสก่อนบันทึก
 const createUser = async ({ firstName, lastName, email, phoneNumber, password, role }) => {
   if (!firstName || !lastName || !email || !phoneNumber || !password || role == null) {
     throw new Error('Missing required fields');
   }
-
   try {
     const enumRole = toEnumRole(role);
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const user = await prisma.user.create({
-      data: {
-        firstName,
-        lastName,
-        email,
-        phoneNumber,
-        password: hashedPassword,
-        role: enumRole,
-      },
+      data: { firstName, lastName, email, phoneNumber, password: hashedPassword, role: enumRole },
       select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-        email: true,
-        phoneNumber: true,
-        role: true,
-        createdAt: true,
-        updatedAt: true,
+        id: true, firstName: true, lastName: true, email: true,
+        phoneNumber: true, role: true, createdAt: true, updatedAt: true,
       }
     });
-
     return sanitizeUser(user);
   } catch (err) {
+    if (err?.code === 'P2002' && err?.meta?.target?.includes('email')) {
+      throw new Error('Email already exists');
+    }
     throw new Error('Failed to create user: ' + err.message);
   }
 };
 
-// อัปเดตผู้ใช้
 const updateUser = async (id, data) => {
   try {
     const updateData = { ...data };
@@ -140,7 +103,6 @@ const updateUser = async (id, data) => {
     if (updateData.password) {
       updateData.password = await bcrypt.hash(updateData.password, 10);
     }
-
     if (updateData.role != null) {
       updateData.role = toEnumRole(updateData.role);
     }
@@ -149,19 +111,15 @@ const updateUser = async (id, data) => {
       where: { id: Number(id) },
       data: updateData,
       select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-        email: true,
-        phoneNumber: true,
-        role: true,
-        createdAt: true,
-        updatedAt: true,
+        id: true, firstName: true, lastName: true, email: true,
+        phoneNumber: true, role: true, createdAt: true, updatedAt: true,
       }
     });
-
     return sanitizeUser(user);
   } catch (err) {
+    if (err?.code === 'P2002' && err?.meta?.target?.includes('email')) {
+      throw new Error('Email already exists');
+    }
     throw new Error('Failed to update user: ' + err.message);
   }
 };
@@ -175,36 +133,26 @@ const deleteUser = async (id) => {
   }
 };
 
-// ใช้ตอน login: ต้องคืน password เพื่อ compare
+// ใช้ตอน login
 const getUserByEmail = async (email) => {
   try {
     const user = await prisma.user.findUnique({
       where: { email },
       select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-        email: true,
-        phoneNumber: true,
-        password: true, // ต้องมีสำหรับ bcrypt.compare
-        role: true,
-        createdAt: true,
-        updatedAt: true,
+        id: true, firstName: true, lastName: true, email: true,
+        phoneNumber: true, password: true, role: true,
+        createdAt: true, updatedAt: true,
       }
     });
-
     if (!user) throw new Error('User not found');
-    return user; // **อย่าตัด password ที่นี่** authController ต้องใช้ compare
+    return user;
   } catch (err) {
     throw new Error('Failed to fetch user by email: ' + err.message);
   }
 };
 
 module.exports = {
-  // ใหม่
   getUsersForOfficer,
-
-  // เดิม
   getAllUsers,
   getUserById,
   createUser,
