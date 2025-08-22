@@ -26,6 +26,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    container_name: easydoc-backend
     restart: unless-stopped
     ports:
       - "3001:3001"
@@ -44,12 +45,11 @@ services:
     networks:
       - easydoc-network
     command: >
-      sh -c "
-        echo 'Waiting for database to be ready...' &&
-        npx prisma migrate deploy &&
-        npx prisma generate &&
-        npm start
-      "
+      sh -c '
+        mkdir -p /app/src/config &&
+        echo "$FIREBASE_SA_BASE64" | base64 -d > /app/src/config/easydocv1-firebase-adminsdk-r4zkx-e42d3aabbc.json &&
+        node src/index.js
+      '
 
 volumes:
   postgres_data:
