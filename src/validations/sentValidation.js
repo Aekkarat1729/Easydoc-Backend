@@ -11,7 +11,7 @@ const sentSchema = z.object({
   senderId: z.coerce.number().int().positive(),
   receiverId: z.coerce.number().int().positive(),
   number: z.string().optional(),
-  category: z.string().optional(),
+  category: z.coerce.number().int().optional(),
   description: z.string().optional(),
   // เพิ่มใหม่
   subject: z.string().optional(),   // ชื่อเรื่อง
@@ -28,7 +28,7 @@ const replySchema = z.object({
   remark: z.string().optional(),
   subject: z.string().optional(),
   number: z.string().optional(),
-  category: z.string().optional(),
+  category: z.coerce.number().int().optional(),
   status: z.nativeEnum(DocumentStatus).optional()
 });
 

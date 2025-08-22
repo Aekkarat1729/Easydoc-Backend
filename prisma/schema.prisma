@@ -72,7 +72,7 @@ model Sent {
   receiverId Int
 
   number      String?
-  category    String?
+  category    Int?
   description String?
   subject     String?
   remark      String?
