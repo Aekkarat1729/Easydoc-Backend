@@ -25,7 +25,7 @@ function toEnumRole(input) {
 function sanitizeUser(user) {
   if (!user) return user;
   const { password, ...rest } = user;
-  return { ...rest, roleNumber: mapRoleToNumber(user.role) };
+  return { ...rest, roleNumber: mapRoleToNumber(user.role), position: user.position };
 }
 
 /* ------------------------------- Services ------------------------------- */
@@ -34,7 +34,7 @@ function sanitizeUser(user) {
 const getUsersForOfficer = async () => {
   try {
     const users = await prisma.user.findMany({
-      select: { id: true, email: true, firstName: true, lastName: true }
+      select: { id: true, email: true, firstName: true, lastName: true, position: true }
     });
     return users;
   } catch (err) {
@@ -47,7 +47,7 @@ const getAllUsers = async () => {
     const users = await prisma.user.findMany({
       select: {
         id: true, firstName: true, lastName: true, email: true,
-        phoneNumber: true, role: true, createdAt: true, updatedAt: true,
+        phoneNumber: true, role: true, position: true, createdAt: true, updatedAt: true,
       }
     });
     return users.map(sanitizeUser);
@@ -62,7 +62,7 @@ const getUserById = async (id) => {
       where: { id: Number(id) },
       select: {
         id: true, firstName: true, lastName: true, email: true,
-        phoneNumber: true, role: true, createdAt: true, updatedAt: true,
+        phoneNumber: true, role: true, position: true, createdAt: true, updatedAt: true,
       }
     });
     if (!user) throw new Error('User not found');
@@ -73,6 +73,7 @@ const getUserById = async (id) => {
 };
 
 const createUser = async ({ firstName, lastName, email, phoneNumber, password, role }) => {
+  const { position } = arguments[0];
   if (!firstName || !lastName || !email || !phoneNumber || !password || role == null) {
     throw new Error('Missing required fields');
   }
@@ -81,10 +82,10 @@ const createUser = async ({ firstName, lastName, email, phoneNumber, password, r
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const user = await prisma.user.create({
-      data: { firstName, lastName, email, phoneNumber, password: hashedPassword, role: enumRole },
+      data: { firstName, lastName, email, phoneNumber, password: hashedPassword, role: enumRole, position },
       select: {
         id: true, firstName: true, lastName: true, email: true,
-        phoneNumber: true, role: true, createdAt: true, updatedAt: true,
+        phoneNumber: true, role: true, position: true, createdAt: true, updatedAt: true,
       }
     });
     return sanitizeUser(user);
@@ -112,7 +113,7 @@ const updateUser = async (id, data) => {
       data: updateData,
       select: {
         id: true, firstName: true, lastName: true, email: true,
-        phoneNumber: true, role: true, createdAt: true, updatedAt: true,
+        phoneNumber: true, role: true, position: true, createdAt: true, updatedAt: true,
       }
     });
     return sanitizeUser(user);
@@ -140,7 +141,7 @@ const getUserByEmail = async (email) => {
       where: { email },
       select: {
         id: true, firstName: true, lastName: true, email: true,
-        phoneNumber: true, password: true, role: true,
+        phoneNumber: true, password: true, role: true, position: true,
         createdAt: true, updatedAt: true,
       }
     });

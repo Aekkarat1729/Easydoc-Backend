@@ -23,8 +23,8 @@ const getUsersForOfficer = {
   handler: async (request, h) => {
     try {
       try { isOfficer(request); } catch { isAdmin(request); }
-      const users = await userService.getUsersForOfficer();
-      return success(h, users || []);
+  const users = await userService.getUsersForOfficer();
+  return success(h, users.map(u => ({ ...u, position: u.position })) || []);
     } catch (err) {
       return error(h, err.message);
     }
@@ -37,8 +37,8 @@ const getAllUsers = {
   handler: async (request, h) => {
     try {
       isAdmin(request);
-      const users = await userService.getAllUsers();
-      return success(h, users || []);
+  const users = await userService.getAllUsers();
+  return success(h, users.map(u => ({ ...u, position: u.position })) || []);
     } catch (err) {
       return error(h, err.message);
     }
@@ -54,7 +54,7 @@ const getUserById = {
     try {
       const user = await userService.getUserById(Number(parsed.data.id));
       if (!user) return notFound(h);
-      return success(h, user);
+  return success(h, { ...user, position: user.position });
     } catch (err) {
       return error(h, err.message);
     }
@@ -75,8 +75,8 @@ const createUser = {
     if (!parsed.success) return replyZodError(h, parsed.error);
 
     try {
-      const user = await userService.createUser(parsed.data);
-      return created(h, user);
+  const user = await userService.createUser(parsed.data);
+  return created(h, { ...user, position: user.position });
     } catch (err) {
       return error(h, err.message);
     }
@@ -99,8 +99,8 @@ const updateUser = {
     if (!parsedPayload.success) return replyZodError(h, parsedPayload.error);
 
     try {
-      const updated = await userService.updateUser(Number(parsedId.data.id), parsedPayload.data);
-      return success(h, updated);
+  const updated = await userService.updateUser(Number(parsedId.data.id), parsedPayload.data);
+  return success(h, { ...updated, position: updated.position });
     } catch (err) {
       return error(h, err.message);
     }

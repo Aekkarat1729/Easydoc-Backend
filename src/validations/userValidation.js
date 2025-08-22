@@ -22,7 +22,8 @@ const createUserSchema = z.object({
   email: z.string().trim().email(),
   phoneNumber: phoneSchema,
   password: z.string().min(6),
-  role: roleInputSchema.default('USER')
+  role: roleInputSchema.default('USER'),
+  position: z.string().trim().min(1).optional()
 });
 
 const updateUserSchema = z.object({
@@ -31,7 +32,8 @@ const updateUserSchema = z.object({
   email: z.string().trim().email().optional(),
   phoneNumber: phoneSchema.optional(),
   password: z.string().min(6).optional(),
-  role: roleInputSchema.optional()
+  role: roleInputSchema.optional(),
+  position: z.string().trim().min(1).optional()
 });
 
 module.exports = { idParamSchema, createUserSchema, updateUserSchema };
