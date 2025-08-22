@@ -37,6 +37,7 @@ services:
       CORS_ORIGINS: https://esdkku.vercel.app,http://localhost:3001
       FIREBASE_STORAGE_BUCKET: easydocv1.appspot.com
       GOOGLE_APPLICATION_CREDENTIALS: /app/src/config/easydocv1-firebase-adminsdk-r4zkx-e42d3aabbc.json
+      FIREBASE_SA_BASE64=${FIREBASE_SA_BASE64}
     depends_on:
       postgres:
         condition: service_healthy
