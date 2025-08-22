@@ -105,7 +105,7 @@ async function init() {
     method: 'GET',
     path: '/health',
     options: { auth: false },
-    handler: () => ({ status: 'ok' })
+    handler: () => ({ status: 'ok number 1' })
   });
 
   /* ----------------------------- App routes ------------------------------ */
