@@ -47,7 +47,7 @@ services:
     command: >
       sh -c '
         mkdir -p /app/src/config &&
-        echo "$FIREBASE_SA_BASE64" | base64 -d > /app/src/config/easydocv1-firebase-adminsdk-r4zkx-e42d3aabbc.json &&
+        printf "%s" "$FIREBASE_SA_BASE64" | base64 -d > /app/src/config/easydocv1-firebase-adminsdk-r4zkx-e42d3aabbc.json &&
         node src/index.js
       '
 
