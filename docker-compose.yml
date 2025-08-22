@@ -3,6 +3,8 @@ services:
   postgres:
     image: postgres:15-alpine
     restart: unless-stopped
+    ports:
+      - "5432:5432"
     environment:
       POSTGRES_DB: easydoc_database2
       POSTGRES_USER: easydoc_database2_user
