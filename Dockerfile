@@ -19,6 +19,9 @@ RUN npx prisma generate
 # Copy source code
 COPY src ./src/
 
+# Make sure Firebase credentials are copied
+COPY src/config/easydocv1-firebase-adminsdk-r4zkx-e42d3aabbc.json ./src/config/
+
 # Create non-root user for security
 RUN addgroup -g 1001 -S nodejs
 RUN adduser -S nodejs -u 1001
