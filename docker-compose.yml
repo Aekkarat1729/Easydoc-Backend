@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database (Internal Only)
+  postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: easydoc_database2
+      POSTGRES_USER: easydoc_database2_user
+      POSTGRES_PASSWORD: docker_secure_password_2024
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    # Remove external port exposure - database only accessible within Docker network
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker-init:/docker-entrypoint-initdb.d
+    networks:
+      - easydoc-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U easydoc_database2_user -d easydoc_database2"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Node.js Backend Application
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://easydoc_database2_user:docker_secure_password_2024@postgres:5432/easydoc_database2?schema=public&connect_timeout=300
+      JWT_SECRET: docker_jwt_secret_key_2024_easydoc_secure
+      PORT: 3000
+      CORS_ORIGINS: https://esdkku.vercel.app,http://localhost:3000
+      FIREBASE_STORAGE_BUCKET: easydocv1.appspot.com
+      GOOGLE_APPLICATION_CREDENTIALS: /app/src/config/easydocv1-firebase-adminsdk-r4zkx-e42d3aabbc.json
+    volumes:
+      - ./src/config/easydocv1-firebase-adminsdk-r4zkx-e42d3aabbc.json:/app/src/config/easydocv1-firebase-adminsdk-r4zkx-e42d3aabbc.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - easydoc-network
+    command: >
+      sh -c "
+        echo 'Waiting for database to be ready...' &&
+        npx prisma migrate deploy &&
+        npx prisma generate &&
+        npm start
+      "
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  easydoc-network:
+    driver: bridge
