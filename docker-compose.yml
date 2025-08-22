@@ -28,16 +28,16 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     ports:
-      - "3001:3000"
+      - "3001:3001"
     environment:
       NODE_ENV: production
       DATABASE_URL: postgresql://easydoc_database2_user:docker_secure_password_2024@postgres:5432/easydoc_database2?schema=public&connect_timeout=300
       JWT_SECRET: docker_jwt_secret_key_2024_easydoc_secure
-      PORT: 3000
-      CORS_ORIGINS: https://esdkku.vercel.app,http://localhost:3001
+      PORT: 3001
+      CORS_ORIGINS: https://esdkku.vercel.app,http://localhost:3001,http://headquarters.thddns.net:9553,http://10.0.0.20:3001
       FIREBASE_STORAGE_BUCKET: easydocv1.appspot.com
       GOOGLE_APPLICATION_CREDENTIALS: /app/src/config/easydocv1-firebase-adminsdk-r4zkx-e42d3aabbc.json
-      FIREBASE_SA_BASE64=${FIREBASE_SA_BASE64}
+      FIREBASE_SA_BASE64: ${FIREBASE_SA_BASE64}
     depends_on:
       postgres:
         condition: service_healthy
