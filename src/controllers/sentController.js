@@ -8,14 +8,15 @@ const admin = require('firebase-admin');
 const isOfficer = require('../utils/isOfficer');
 const prisma = new PrismaClient();
 
-// ✅ services
+// services
 const {
   getSentById: fetchSentById,
-  getSentByIdWithChain,
-  replyDocument,       // ใช้สร้างเรคคอร์ด reply
+  getSentByIdWithChain,   // คืน chain พร้อม documents (จาก service)
+  replyDocument,
+  hasReplyInThread,
 } = require('../services/sentService');
 
-// ✅ zod schema
+// zod schema
 const { idParamSchema, replySchema } = require('../validations/sentValidation');
 
 /* -------------------------- Firebase Initialization ------------------------- */
@@ -57,7 +58,6 @@ const bucket = admin.storage().bucket(process.env.FIREBASE_STORAGE_BUCKET);
 
 /* --------------------------------- Helpers --------------------------------- */
 
-// ทำชื่อโฟลเดอร์ให้ปลอดภัย (รองรับไทย, เว้นวรรค -> _)
 function toSafeFolderName(input, fallback) {
   if (!input) return fallback;
   const normalized = input.normalize('NFKC').replace(/[\u0000-\u001F\u007F]/g, '');
@@ -65,15 +65,11 @@ function toSafeFolderName(input, fallback) {
   const underscored = cleaned.trim().replace(/\s+/g, '_');
   return underscored || fallback;
 }
-
-// คงชื่อไฟล์เดิมให้ปลอดภัย
 function toSafeFileName(filename) {
   const base = path.basename(filename);
   const cleaned = base.normalize('NFKC').replace(/[^\p{L}\p{N} ._\-]/gu, '');
   return cleaned.trim() || 'file';
 }
-
-// เดา content-type
 function guessContentType(ext) {
   switch ((ext || '').toLowerCase()) {
     case 'pdf': return 'application/pdf';
@@ -85,8 +81,6 @@ function guessContentType(ext) {
     default: return 'application/octet-stream';
   }
 }
-
-// แปลง/ตรวจ status ให้ตรง enum Prisma
 function normalizeStatus(input) {
   const DEFAULT = DocumentStatus.SENT;
   if (input == null) return DEFAULT;
@@ -109,8 +103,6 @@ function normalizeStatus(input) {
 
   return DEFAULT;
 }
-
-// อัปโหลดขึ้น Firebase แล้วคืน public URL
 async function uploadToFirebase(localPath, destPath, contentType) {
   await bucket.upload(localPath, {
     destination: destPath,
@@ -125,9 +117,36 @@ async function uploadToFirebase(localPath, destPath, contentType) {
   return `https://storage.googleapis.com/${bucket.name}/${destPath}`;
 }
 
+// รวมไฟล์จาก payload รองรับ file หรือ files และ single/array
+function collectFiles(payload) {
+  const out = [];
+  const push = (f) => { if (f && f.filename) out.push(f); };
+  if (payload?.file)  Array.isArray(payload.file)  ? payload.file.forEach(push)  : push(payload.file);
+  if (payload?.files) Array.isArray(payload.files) ? payload.files.forEach(push) : push(payload.files);
+  return out;
+}
+
+// เติม documents[] ให้เรคคอร์ด sent โดยอ่านจาก field documentIds (หรือ fallback documentId)
+async function hydrateDocumentsForRecords(records) {
+  const arr = Array.isArray(records) ? records : [records];
+  const allIds = new Set();
+  for (const r of arr) {
+    const ids = (r.documentIds?.length ? r.documentIds : [r.documentId]).filter(Boolean);
+    ids.forEach((id) => allIds.add(id));
+  }
+  const docs = await prisma.document.findMany({ where: { id: { in: Array.from(allIds) } } });
+  const docMap = new Map(docs.map(d => [d.id, d]));
+  return arr.map(r => ({
+    ...r,
+    documents: (r.documentIds?.length ? r.documentIds : [r.documentId])
+      .map(id => docMap.get(id))
+      .filter(Boolean)
+  }));
+}
+
 /* -------------------------------- Handlers --------------------------------- */
 
-/** ======================== ส่งเอกสารใหม่ (มีไฟล์) ======================== */
+/** ======================== ส่งเอกสารใหม่ (หลายไฟล์) ======================== */
 const sendDocumentWithFile = {
   auth: 'jwt',
   tags: ['api', 'sent'],
@@ -135,30 +154,19 @@ const sendDocumentWithFile = {
     output: 'file',
     parse: true,
     allow: 'multipart/form-data',
-    maxBytes: 10 * 1024 * 1024, // 10MB
+    maxBytes: 20 * 1024 * 1024, // เพิ่มเพดานเผื่อหลายไฟล์
     multipart: { output: 'file' },
   },
   handler: async (request, h) => {
-    const tempFile = request.payload?.file;
+    const tempFiles = collectFiles(request.payload);
     try {
-      isOfficer(request); // ตรวจสอบว่าเป็น Officer หรือไม่
+      isOfficer(request);
       const senderId = request.auth.credentials.userId;
 
       const { receiverEmail, number, category, description, subject, remark, status } = request.payload;
-      const file = tempFile;
 
-      if (!file || !file.filename) {
+      if (!tempFiles.length) {
         throw new Error('Failed to upload document: No file uploaded.');
-      }
-
-      // ตรวจชนิดไฟล์
-      const originalName = toSafeFileName(file.filename);
-      const parts = originalName.split('.');
-      const ext = parts.length > 1 ? parts.pop() : '';
-      const baseName = parts.join('.');
-      const fileType = (ext || '').toLowerCase();
-      if (!['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png'].includes(fileType)) {
-        throw new Error('Unsupported file type.');
       }
 
       // ผู้รับ
@@ -173,30 +181,42 @@ const sendDocumentWithFile = {
       const fullNameRaw = [sender?.firstName, sender?.lastName].filter(Boolean).join(' ').trim();
       const folderName = toSafeFolderName(fullNameRaw, String(senderId));
 
-      const safeFileName = originalName;
-      const destPath = `sent/${folderName}/${safeFileName}`;
-
-      const contentType = file.headers?.['content-type'] || guessContentType(fileType);
-      const fileUrl = await uploadToFirebase(file.path, destPath, contentType);
-
-      try { fs.unlinkSync(file.path); } catch (_) {}
-
-      // บันทึก document
-      const document = await prisma.document.create({
-        data: {
-          name: baseName,
-          fileType,
-          fileUrl,
-          userId: senderId,
-          uploadedAt: new Date(),
+      // อัปโหลดทุกไฟล์ + สร้าง document ทุกไฟล์
+      const createdDocs = [];
+      for (const file of tempFiles) {
+        const originalName = toSafeFileName(file.filename);
+        const parts = originalName.split('.');
+        const ext = parts.length > 1 ? parts.pop() : '';
+        const baseName = parts.join('.');
+        const fileType = (ext || '').toLowerCase();
+        if (!['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png'].includes(fileType)) {
+          throw new Error(`Unsupported file type: ${fileType}`);
         }
-      });
 
-      // สร้าง sent (root)
+        const destPath = `sent/${folderName}/${Date.now()}_${originalName}`;
+        const contentType = file.headers?.['content-type'] || guessContentType(fileType);
+        const fileUrl = await uploadToFirebase(file.path, destPath, contentType);
+        try { fs.unlinkSync(file.path); } catch (_) {}
+
+        const doc = await prisma.document.create({
+          data: {
+            name: baseName,
+            fileType,
+            fileUrl,
+            userId: senderId,
+            uploadedAt: new Date(),
+          }
+        });
+        createdDocs.push(doc);
+      }
+
+      // ใช้ไฟล์แรกเป็น document หลักของ sent + เก็บ array ทั้งหมดใน documentIds
+      const docIds = createdDocs.map(d => d.id);
       const now = new Date();
       const statusNormalized = normalizeStatus(status || 'SENT');
       const createData = {
-        documentId: document.id,
+        documentId: docIds[0],
+        documentIds: docIds,            // ✅ เก็บหลายไฟล์
         senderId,
         receiverId: receiver.id,
         number,
@@ -223,29 +243,28 @@ const sendDocumentWithFile = {
       const created = await prisma.sent.create({ data: createData });
 
       await prisma.$transaction([
-        prisma.sent.update({
-          where: { id: created.id },
-          data: { threadId: created.id }
-        }),
+        prisma.sent.update({ where: { id: created.id }, data: { threadId: created.id } }),
         prisma.sentStatusHistory.create({
-          data: {
-            sentId: created.id,
-            from: DocumentStatus.PENDING,
-            to: statusNormalized,
-            changedById: senderId,
-          }
+          data: { sentId: created.id, from: DocumentStatus.PENDING, to: statusNormalized, changedById: senderId }
         })
       ]);
+
+      // ตรวจว่ามี reply ในเธรดนี้ไหม (เพิ่งสร้าง = false)
+      const isReply = await hasReplyInThread(created.id);
 
       return h.response({
         success: true,
         message: 'Document sent successfully',
-        data: created
+        isreply: isReply,
+        isReply: isReply,
+        data: created,
+        documents: createdDocs
       }).code(201);
 
     } catch (err) {
       console.error('Error sending document:', err);
-      if (tempFile?.path) { try { fs.unlinkSync(tempFile.path); } catch (_) {} }
+      // ลบ temp ที่ยังเหลือ
+      for (const f of tempFiles) { try { fs.unlinkSync(f.path); } catch (_) {} }
       return h.response({ success: false, message: err.message }).code(500);
     }
   }
@@ -280,24 +299,26 @@ const forwardDocument = {
 
       // หา document ต้นทาง + parent
       let sourceDocumentId;
+      let sourceDocumentIds = [];
       let parent = null;
 
       if (parentSentId != null) {
         parent = await prisma.sent.findUnique({
           where: { id: Number(parentSentId) },
-          include: { document: true }
+          select: { id: true, documentId: true, documentIds: true, threadId: true, depth: true }
         });
         if (!parent) throw new Error('parentSentId not found.');
-        sourceDocumentId = parent.documentId;
+        sourceDocumentId  = parent.documentId;
+        sourceDocumentIds = parent.documentIds?.length ? parent.documentIds : [parent.documentId];
       } else if (documentId != null) {
         const doc = await prisma.document.findUnique({ where: { id: Number(documentId) } });
         if (!doc) throw new Error('documentId not found.');
-        sourceDocumentId = doc.id;
-
+        sourceDocumentId  = doc.id;
+        sourceDocumentIds = [doc.id];
         parent = await prisma.sent.findFirst({
           where: { documentId: doc.id },
           orderBy: { sentAt: 'desc' }
-        }); // อาจเป็น null ถ้ายังไม่เคยส่ง
+        }); // อาจเป็น null
       } else {
         throw new Error('Either parentSentId or documentId is required.');
       }
@@ -310,6 +331,7 @@ const forwardDocument = {
       const statusNormalized = normalizeStatus(status || 'SENT');
       const data = {
         documentId: sourceDocumentId,
+        documentIds: sourceDocumentIds, // ✅ คงไฟล์เดิมทั้งหมด
         senderId,
         receiverId: receiver.id,
         number,
@@ -320,7 +342,7 @@ const forwardDocument = {
         status: statusNormalized,
         isForwarded: true,
         parentSentId: parent?.id ?? null,
-        threadId: parent?.threadId ?? parent?.id ?? null,
+        threadId: parent?.threadId ?? parent?.id ?? null, // ถ้าไม่มี parent = root ใหม่
         depth: (parent?.depth ?? -1) + 1,
         sentAt: now,
         statusById: senderId,
@@ -335,6 +357,7 @@ const forwardDocument = {
 
       let created = await prisma.sent.create({ data });
 
+      // ถ้าเป็น root ใหม่ (ไม่มี parent) ให้ตั้ง threadId = id ของตัวเอง
       if (!created.threadId) {
         created = await prisma.sent.update({
           where: { id: created.id },
@@ -343,17 +366,16 @@ const forwardDocument = {
       }
 
       await prisma.sentStatusHistory.create({
-        data: {
-          sentId: created.id,
-          from: DocumentStatus.PENDING,
-          to: statusNormalized,
-          changedById: senderId,
-        }
+        data: { sentId: created.id, from: DocumentStatus.PENDING, to: statusNormalized, changedById: senderId }
       });
+
+      const isReply = await hasReplyInThread(created.threadId);
 
       return h.response({
         success: true,
         message: 'Document forwarded successfully',
+        isreply: isReply,
+        isReply: isReply,
         data: created
       }).code(201);
     } catch (err) {
@@ -363,10 +385,10 @@ const forwardDocument = {
   }
 };
 
-/** ============================== ตอบกลับ ============================== */
+/** ============================== ตอบกลับ (หลายไฟล์) ============================== */
 /**
  * POST /sent/reply  (multipart/form-data)
- * body: { parentSentId, message, remark?, subject?, number?, category?, status? , file? }
+ * body: { parentSentId, message, remark?, subject?, number?, category?, status? , file/files? }
  */
 const replyToSent = {
   auth: 'jwt',
@@ -375,15 +397,14 @@ const replyToSent = {
     output: 'file',
     parse: true,
     allow: 'multipart/form-data',
-    maxBytes: 10 * 1024 * 1024,
+    maxBytes: 20 * 1024 * 1024,
     multipart: { output: 'file' },
   },
   handler: async (request, h) => {
-    const tempFile = request.payload?.file;
+    const tempFiles = collectFiles(request.payload);
     try {
       const senderId = request.auth.credentials.userId;
 
-      // validate เบื้องต้นด้วย zod
       const parsed = replySchema.safeParse(request.payload);
       if (!parsed.success) {
         return h.response({
@@ -393,54 +414,24 @@ const replyToSent = {
       }
       const { parentSentId, message, remark, subject, number, category, status } = parsed.data;
 
-      // 👉 หา parent + thread root (คนแรกของ chain)
-      // 👉 หา parent + thread root (คนแรกของ chain)
-const parent = await prisma.sent.findUnique({
-  where: { id: Number(parentSentId) },
-  select: {
-    id: true,
-    documentId: true,
-    senderId: true,
-    receiverId: true,
-    threadId: true,
-    depth: true
-  }
-});
-if (!parent) {
-  return h.response({ success: false, message: 'parentSentId not found' }).code(404);
-}
+      // หา parent + คนแรกของ chain
+      const parent = await prisma.sent.findUnique({
+        where: { id: Number(parentSentId) },
+        select: { id: true, documentId: true, documentIds: true, senderId: true, receiverId: true, threadId: true, depth: true }
+      });
+      if (!parent) return h.response({ success: false, message: 'parentSentId not found' }).code(404);
 
-const rootId = parent.threadId ?? parent.id;
-const root = await prisma.sent.findUnique({
-  where: { id: rootId },
-  select: { senderId: true }
-});
-if (!root?.senderId) {
-  return h.response({ success: false, message: 'Root sender not found' }).code(400);
-}
+      const rootId = parent.threadId ?? parent.id;
+      const root = await prisma.sent.findUnique({ where: { id: rootId }, select: { senderId: true } });
+      if (!root?.senderId) return h.response({ success: false, message: 'Root sender not found' }).code(400);
 
-// ✅ ผู้รับ = ผู้ส่งคนแรกของทั้งเธรด
-let receiverId = root.senderId;
-// กันเคสตอบหาตัวเอง
-if (receiverId === senderId) {
-  receiverId = parent.senderId;
-}
+      // ผู้รับ = ผู้ส่งคนแรกของเธรด (กันเคสตอบหาตัวเอง -> ส่งกลับไปหาคนก่อนหน้า)
+      let receiverId = root.senderId;
+      if (receiverId === senderId) receiverId = parent.senderId;
 
-
-      // documentId: ถ้ามีไฟล์ => อัปโหลด + สร้าง document ใหม่, ถ้าไม่ => ใช้ของเดิม
-      let documentId = parent.documentId;
-      const file = tempFile;
-
-      if (file && file.filename) {
-        const originalName = toSafeFileName(file.filename);
-        const parts = originalName.split('.');
-        const ext = parts.length > 1 ? parts.pop() : '';
-        const baseName = parts.join('.');
-        const fileType = (ext || '').toLowerCase();
-        if (!['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png'].includes(fileType)) {
-          throw new Error('Unsupported file type.');
-        }
-
+      // อัปโหลดหลายไฟล์ (ถ้ามี) สร้าง document หลายตัว
+      const createdDocs = [];
+      if (tempFiles.length) {
         const senderProfile = await prisma.user.findUnique({
           where: { id: senderId },
           select: { firstName: true, lastName: true },
@@ -449,30 +440,42 @@ if (receiverId === senderId) {
           [senderProfile?.firstName, senderProfile?.lastName].filter(Boolean).join(' ').trim(),
           String(senderId)
         );
-        const destPath = `replies/${folderName}/${originalName}`;
-        const contentType = file.headers?.['content-type'] || guessContentType(fileType);
-        const fileUrl = await uploadToFirebase(file.path, destPath, contentType);
-        try { fs.unlinkSync(file.path); } catch (_) {}
 
-        const doc = await prisma.document.create({
-          data: {
-            name: baseName,
-            fileType,
-            fileUrl,
-            userId: senderId,
-            uploadedAt: new Date(),
+        for (const file of tempFiles) {
+          const originalName = toSafeFileName(file.filename);
+          const parts = originalName.split('.');
+          const ext = parts.length > 1 ? parts.pop() : '';
+          const baseName = parts.join('.');
+          const fileType = (ext || '').toLowerCase();
+          if (!['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png'].includes(fileType)) {
+            throw new Error(`Unsupported file type: ${fileType}`);
           }
-        });
-        documentId = doc.id;
+
+          const destPath = `replies/${folderName}/${Date.now()}_${originalName}`;
+          const contentType = file.headers?.['content-type'] || guessContentType(fileType);
+          const fileUrl = await uploadToFirebase(file.path, destPath, contentType);
+          try { fs.unlinkSync(file.path); } catch (_) {}
+
+          const doc = await prisma.document.create({
+            data: { name: baseName, fileType, fileUrl, userId: senderId, uploadedAt: new Date() }
+          });
+          createdDocs.push(doc);
+        }
       }
+
+      // documents ของ reply = ถ้ามีอัปโหลดใหม่ ใช้ชุดใหม่; ถ้าไม่มี ใช้ชุดของ parent (หรืออย่างน้อยไฟล์หลัก)
+      const docIds = createdDocs.length
+        ? createdDocs.map(d => d.id)
+        : (parent.documentIds?.length ? parent.documentIds : [parent.documentId]);
 
       // สร้างเรคคอร์ด reply
       const now = new Date();
       const statusNormalized = normalizeStatus(status || 'SENT');
       const replyData = {
-        documentId,
+        documentId: docIds[0],
+        documentIds: docIds,    // ✅ เก็บหลายไฟล์
         senderId,
-        receiverId,                 // ✅ เปลี่ยนมาใช้ root sender
+        receiverId,
         number,
         category,
         description: message,
@@ -481,7 +484,7 @@ if (receiverId === senderId) {
         status: statusNormalized,
         isForwarded: false,
         parentSentId: parent.id,
-        threadId: rootId,           // ✅ ผูกกับ root เดิมของเธรด
+        threadId: rootId,
         depth: (parent.depth ?? 0) + 1,
         sentAt: now,
         statusById: senderId,
@@ -497,22 +500,22 @@ if (receiverId === senderId) {
       const created = await replyDocument(replyData);
 
       await prisma.sentStatusHistory.create({
-        data: {
-          sentId: created.id,
-          from: DocumentStatus.PENDING,
-          to: statusNormalized,
-          changedById: senderId,
-        }
+        data: { sentId: created.id, from: DocumentStatus.PENDING, to: statusNormalized, changedById: senderId }
       });
+
+      const isReply = await hasReplyInThread(rootId);
 
       return h.response({
         success: true,
         message: 'Reply sent successfully',
-        data: created
+        isreply: isReply,
+        isReply: isReply,
+        data: created,
+        documents: createdDocs
       }).code(201);
     } catch (err) {
       console.error('Error replying document:', err);
-      if (tempFile?.path) { try { fs.unlinkSync(tempFile.path); } catch (_) {} }
+      for (const f of tempFiles) { try { fs.unlinkSync(f.path); } catch (_) {} }
       return h.response({ success: false, message: err.message || String(err) }).code(500);
     }
   }
@@ -588,12 +591,7 @@ const updateSentStatus = {
       const [updated] = await prisma.$transaction([
         prisma.sent.update({ where: { id: sent.id }, data }),
         prisma.sentStatusHistory.create({
-          data: {
-            sentId: sent.id,
-            from: sent.status,
-            to: next,
-            changedById: userId,
-          }
+          data: { sentId: sent.id, from: sent.status, to: next, changedById: userId }
         })
       ]);
 
@@ -620,12 +618,22 @@ const getThreadBySentId = {
         orderBy: [{ depth: 'asc' }, { sentAt: 'asc' }],
         include: {
           document: true,
-          sender: { select: { id: true, email: true, firstName: true, lastName: true } },
+          sender:   { select: { id: true, email: true, firstName: true, lastName: true } },
           receiver: { select: { id: true, email: true, firstName: true, lastName: true } },
         }
       });
 
-      return h.response({ success: true, rootId, data: thread }).code(200);
+      // เติม documents[] จาก documentIds
+      const threadWithDocs = await hydrateDocumentsForRecords(thread);
+
+      // เติม kind และ hasReply
+      const withKind = threadWithDocs.map(x => ({
+        ...x,
+        kind: x.parentSentId == null ? 'root' : (x.isForwarded ? 'forward' : 'reply'),
+      }));
+      const hasReply = withKind.some(x => x.kind === 'reply');
+
+      return h.response({ success: true, rootId, hasReply, data: withKind }).code(200);
     } catch (err) {
       console.error('Error fetching thread:', err);
       return h.response({ success: false, message: err.message }).code(500);
@@ -666,21 +674,21 @@ const getAllMail = {
         where: { OR: [{ senderId: userId }, { receiverId: userId }] },
         include: {
           document: true,
-          sender: { select: { id: true, email: true, firstName: true, lastName: true } },
+          sender:   { select: { id: true, email: true, firstName: true, lastName: true } },
           receiver: { select: { id: true, email: true, firstName: true, lastName: true } }
         },
         orderBy: { sentAt: 'desc' }
       });
 
-      return h.response({ success: true, data: sentDocuments }).code(200);
+      const data = await hydrateDocumentsForRecords(sentDocuments);
+
+      return h.response({ success: true, data }).code(200);
     } catch (err) {
       console.error('Error fetching all mail:', err);
       return h.response({ success: false, message: err.message }).code(500);
     }
   }
 };
-
-// src/controllers/sentController.js  (เฉพาะฟังก์ชัน getInbox)
 
 const getInbox = {
   auth: 'jwt',
@@ -699,7 +707,6 @@ const getInbox = {
       } else if (only === 'root') {
         where.parentSentId = null;
       }
-      // else: ไม่ฟิลเตอร์ แสดงทั้งหมด
 
       const inboxDocuments = await prisma.sent.findMany({
         where,
@@ -711,8 +718,9 @@ const getInbox = {
         orderBy: { sentAt: 'desc' }
       });
 
-      // เติมฟิลด์ kind ให้ frontend ใช้ง่าย (root|forward|reply)
-      const withKind = inboxDocuments.map(x => ({
+      const withDocs = await hydrateDocumentsForRecords(inboxDocuments);
+
+      const withKind = withDocs.map(x => ({
         ...x,
         kind: x.parentSentId == null ? 'root' : (x.isForwarded ? 'forward' : 'reply'),
       }));
@@ -725,7 +733,6 @@ const getInbox = {
   }
 };
 
-
 const getSentMail = {
   auth: 'jwt',
   tags: ['api', 'sent'],
@@ -736,13 +743,15 @@ const getSentMail = {
         where: { senderId: userId },
         include: {
           document: true,
-          sender: { select: { id: true, email: true, firstName: true, lastName: true } },
+          sender:   { select: { id: true, email: true, firstName: true, lastName: true } },
           receiver: { select: { id: true, email: true, firstName: true, lastName: true } }
         },
         orderBy: { sentAt: 'desc' }
       });
 
-      return h.response({ success: true, data: sentDocuments }).code(200);
+      const data = await hydrateDocumentsForRecords(sentDocuments);
+
+      return h.response({ success: true, data }).code(200);
     } catch (err) {
       console.error('Error fetching sent mail:', err);
       return h.response({ success: false, message: err.message }).code(500);
@@ -750,16 +759,14 @@ const getSentMail = {
   }
 };
 
-/** chain เต็ม */
+/** chain เต็ม (service จะเติม documents[] ให้แล้ว) */
 const getSentChainById = {
   auth: 'jwt',
   tags: ['api', 'sent'],
   handler: async (request, h) => {
     try {
       const parsed = idParamSchema.safeParse(request.params);
-      if (!parsed.success) {
-        return h.response({ success: false, message: 'Invalid id' }).code(400);
-      }
+      if (!parsed.success) return h.response({ success: false, message: 'Invalid id' }).code(400);
       const { id } = parsed.data;
 
       const result = await getSentByIdWithChain(id);
@@ -768,6 +775,7 @@ const getSentChainById = {
         success: true,
         rootId: result.rootId,
         threadCount: result.threadCount,
+        hasReply: result.hasReply,
         data: {
           base: result.base,
           pathFromRoot: result.pathFromRoot,
@@ -785,16 +793,14 @@ const getSentChainById = {
   }
 };
 
-/** ดึงเรคคอร์ดเดียว */
+/** ดึงเรคคอร์ดเดียว (service จะเติม documents[] ให้แล้ว) */
 const getSentById = {
   auth: 'jwt',
   tags: ['api', 'sent'],
   handler: async (request, h) => {
     try {
       const parsed = idParamSchema.safeParse(request.params);
-      if (!parsed.success) {
-        return h.response({ success: false, message: 'Invalid id' }).code(400);
-      }
+      if (!parsed.success) return h.response({ success: false, message: 'Invalid id' }).code(400);
       const { id } = parsed.data;
 
       const data = await fetchSentById(id);
@@ -812,7 +818,7 @@ const getSentById = {
 module.exports = {
   sendDocumentWithFile,
   forwardDocument,
-  replyToSent,           // ✅ export
+  replyToSent,
   updateSentStatus,
   getSentChainById,
   getThreadBySentId,

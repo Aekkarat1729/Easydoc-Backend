@@ -13,7 +13,7 @@ const sentSchema = z.object({
   number: z.string().optional(),
   category: z.string().optional(),
   description: z.string().optional(),
-  // 👇 เพิ่มใหม่
+  // เพิ่มใหม่
   subject: z.string().optional(),   // ชื่อเรื่อง
   remark: z.string().optional(),    // หมายเหตุ
   status: z.nativeEnum(DocumentStatus).optional(),
@@ -21,7 +21,7 @@ const sentSchema = z.object({
   parentSentId: z.coerce.number().int().optional(),
 });
 
-/** ✅ schema สำหรับการตอบกลับ */
+/** schema สำหรับการตอบกลับ */
 const replySchema = z.object({
   parentSentId: z.coerce.number().int().positive(),
   message: z.string().min(1, 'message is required'), // map -> description
