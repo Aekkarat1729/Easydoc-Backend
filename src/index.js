@@ -100,6 +100,14 @@ async function init() {
     handler: () => 'pong'
   });
 
+  // Health endpoint for Docker HEALTHCHECK
+  server.route({
+    method: 'GET',
+    path: '/health',
+    options: { auth: false },
+    handler: () => ({ status: 'ok' })
+  });
+
   /* ----------------------------- App routes ------------------------------ */
   console.log('📦 Registering routes...');
   server.route([
