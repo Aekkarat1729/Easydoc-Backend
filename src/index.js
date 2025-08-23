@@ -9,6 +9,7 @@ const authRoutes = require('./routes/authRoutes');
 const documentRoutes = require('./routes/documentRoutes');
 const sentRoutes = require('./routes/sentRoutes');
 const userRoutes = require('./routes/userRoutes');
+const defaultDocumentRoutes = require('./routes/defaultDocumentRoutes');
 
 /* ------------------------------ Helpers ------------------------------ */
 function parseOrigins(str) {
@@ -110,13 +111,17 @@ async function init() {
 
   /* ----------------------------- App routes ------------------------------ */
   console.log('📦 Registering routes...');
-  server.route([
-    ...authRoutes,
-    ...documentRoutes,
-    ...sentRoutes,
-    ...userRoutes
-  ]);
+    server.route([
+      ...authRoutes,
+      ...documentRoutes,
+      ...sentRoutes,
+      ...userRoutes,
+      ...defaultDocumentRoutes
+    ]);
   console.log('✅ Routes registered!');
+  console.log('🔗 Endpoint: POST   /defaultdocument/upload   (อัพโหลด DefaultDocument)');
+  console.log('🔗 Endpoint: GET    /defaultdocument          (ดู DefaultDocument ทั้งหมดของ user)');
+  console.log('🔗 Endpoint: GET    /defaultdocument/{id}     (ดู DefaultDocument รายการเดียว)');
 
   /* ------------------------- Pretty print by tags ------------------------ */
   console.log('📃 Routes loaded:');

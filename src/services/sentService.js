@@ -1,3 +1,66 @@
+/** ดึง sent ตาม id พร้อม parent และ children (1 ชั้น) */
+const getSentWithNeighborsById = async (id) => {
+  const base = await prisma.sent.findUnique({
+    where: { id: Number(id) },
+    include: {
+      document: true,
+      sender: { select: { id: true, email: true, firstName: true, lastName: true } },
+      receiver: { select: { id: true, email: true, firstName: true, lastName: true } },
+    }
+  });
+  if (!base) throw new Error('Sent not found');
+
+  // Parent (ก่อนหน้า)
+  let parent = null;
+  if (base.parentSentId) {
+    parent = await prisma.sent.findUnique({
+      where: { id: base.parentSentId },
+      include: {
+        document: true,
+        sender: { select: { id: true, email: true, firstName: true, lastName: true } },
+        receiver: { select: { id: true, email: true, firstName: true, lastName: true } },
+      }
+    });
+  }
+
+  // Children (ต่อไป) เฉพาะ 1 ชั้น
+  const children = await prisma.sent.findMany({
+    where: { parentSentId: base.id },
+    include: {
+      document: true,
+  sender: { select: { id: true, email: true, firstName: true, lastName: true, position: true, profileImage: true } },
+  receiver: { select: { id: true, email: true, firstName: true, lastName: true, position: true, profileImage: true } },
+    },
+    orderBy: { sentAt: 'asc' }
+  });
+
+  // แนบ documents ให้ทุก node
+  const allDocIds = new Set();
+  [base, ...(parent ? [parent] : []), ...children].forEach(n => {
+    const ids = (n.documentIds?.length ? n.documentIds : [n.documentId]) || [];
+    ids.forEach(v => allDocIds.add(v));
+  });
+  const docMap = await fetchDocumentsByIds(Array.from(allDocIds));
+  const attachDocs = (n) => ({
+    ...n,
+    documents: (n.documentIds?.length ? n.documentIds : [n.documentId]).map(id => docMap.get(id)).filter(Boolean)
+  });
+
+  // เพิ่ม isReply ให้แต่ละ node
+  const hasReplyBase = base ? await hasReplyInThread(base.threadId ?? base.id) : false;
+  const hasReplyParent = parent ? await hasReplyInThread(parent.threadId ?? parent.id) : false;
+  const childrenWithIsReply = await Promise.all(
+    children.map(async (child) => {
+      const isReply = await hasReplyInThread(child.threadId ?? child.id);
+      return { ...attachDocs(child), isReply };
+    })
+  );
+  return {
+    base: base ? { ...attachDocs(base), isReply: hasReplyBase } : null,
+    parent: parent ? { ...attachDocs(parent), isReply: hasReplyParent } : null,
+    children: childrenWithIsReply
+  };
+};
 // src/services/sentService.js
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
@@ -90,8 +153,8 @@ const getSentByIdWithChain = async (id) => {
     where: { id: Number(id) },
     include: {
       document: true,
-      sender: { select: { id: true, email: true, firstName: true, lastName: true } },
-      receiver: { select: { id: true, email: true, firstName: true, lastName: true } },
+  sender: { select: { id: true, email: true, firstName: true, lastName: true, position: true, profileImage: true } },
+  receiver: { select: { id: true, email: true, firstName: true, lastName: true, position: true, profileImage: true } },
     }
   });
   if (!base) { const e = new Error('Sent not found'); e.code = 'NOT_FOUND'; throw e; }
@@ -197,4 +260,5 @@ module.exports = {
   getSentByIdWithChain,
   replyDocument,
   hasReplyInThread
+  ,getSentWithNeighborsById
 };

@@ -14,6 +14,7 @@ module.exports = [
   { method: 'POST',   path: '/users',          options: createUser },
   { method: 'PUT',    path: '/users/{id}',     options: updateUser },
   { method: 'DELETE', path: '/users/{id}',     options: deleteUser },
+  { method: 'POST',   path: '/upload/profile', options: require('../controllers/userController').uploadProfileImage },
 
   // Officer/Admin เท่านั้น: id, email, firstName, lastName
   { method: 'GET',    path: '/userforofficer', options: getUsersForOfficer },

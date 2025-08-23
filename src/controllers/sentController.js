@@ -618,8 +618,8 @@ const getThreadBySentId = {
         orderBy: [{ depth: 'asc' }, { sentAt: 'asc' }],
         include: {
           document: true,
-          sender:   { select: { id: true, email: true, firstName: true, lastName: true } },
-          receiver: { select: { id: true, email: true, firstName: true, lastName: true } },
+          sender:   { select: { id: true, email: true, firstName: true, lastName: true, position: true, profileimage: true } },
+          receiver: { select: { id: true, email: true, firstName: true, lastName: true, position: true, profileimage: true } },
         }
       });
 
@@ -674,15 +674,21 @@ const getAllMail = {
         where: { OR: [{ senderId: userId }, { receiverId: userId }] },
         include: {
           document: true,
-          sender:   { select: { id: true, email: true, firstName: true, lastName: true } },
-          receiver: { select: { id: true, email: true, firstName: true, lastName: true } }
+          sender:   { select: { id: true, email: true, firstName: true, lastName: true, position: true, profileImage: true } },
+          receiver: { select: { id: true, email: true, firstName: true, lastName: true, position: true, profileImage: true } }
         },
         orderBy: { sentAt: 'desc' }
       });
 
       const data = await hydrateDocumentsForRecords(sentDocuments);
-
-      return h.response({ success: true, data }).code(200);
+      // เพิ่ม isReply ให้แต่ละรายการ
+      const withIsReply = await Promise.all(
+        data.map(async (item) => {
+          const isReply = await require('../services/sentService').hasReplyInThread(item.threadId);
+          return { ...item, isReply };
+        })
+      );
+      return h.response({ success: true, data: withIsReply }).code(200);
     } catch (err) {
       console.error('Error fetching all mail:', err);
       return h.response({ success: false, message: err.message }).code(500);
@@ -712,19 +718,21 @@ const getInbox = {
         where,
         include: {
           document: true,
-          sender:   { select: { id: true, email: true, firstName: true, lastName: true } },
-          receiver: { select: { id: true, email: true, firstName: true, lastName: true } }
+          sender:   { select: { id: true, email: true, firstName: true, lastName: true, position: true, profileImage: true } },
+          receiver: { select: { id: true, email: true, firstName: true, lastName: true, position: true, profileImage: true } }
         },
         orderBy: { sentAt: 'desc' }
       });
 
       const withDocs = await hydrateDocumentsForRecords(inboxDocuments);
 
-      const withKind = withDocs.map(x => ({
-        ...x,
-        kind: x.parentSentId == null ? 'root' : (x.isForwarded ? 'forward' : 'reply'),
-      }));
-
+      const withKind = await Promise.all(
+        withDocs.map(async (x) => {
+          const kind = x.parentSentId == null ? 'root' : (x.isForwarded ? 'forward' : 'reply');
+          const isReply = await require('../services/sentService').hasReplyInThread(x.threadId);
+          return { ...x, kind, isReply };
+        })
+      );
       return h.response({ success: true, data: withKind }).code(200);
     } catch (err) {
       console.error('Error fetching inbox:', err);
@@ -743,15 +751,21 @@ const getSentMail = {
         where: { senderId: userId },
         include: {
           document: true,
-          sender:   { select: { id: true, email: true, firstName: true, lastName: true } },
-          receiver: { select: { id: true, email: true, firstName: true, lastName: true } }
+          sender:   { select: { id: true, email: true, firstName: true, lastName: true, position: true, profileImage: true } },
+          receiver: { select: { id: true, email: true, firstName: true, lastName: true, position: true, profileImage: true } }
         },
         orderBy: { sentAt: 'desc' }
       });
 
       const data = await hydrateDocumentsForRecords(sentDocuments);
-
-      return h.response({ success: true, data }).code(200);
+      // เพิ่ม isReply ให้แต่ละรายการ
+      const withIsReply = await Promise.all(
+        data.map(async (item) => {
+          const isReply = await require('../services/sentService').hasReplyInThread(item.threadId);
+          return { ...item, isReply };
+        })
+      );
+      return h.response({ success: true, data: withIsReply }).code(200);
     } catch (err) {
       console.error('Error fetching sent mail:', err);
       return h.response({ success: false, message: err.message }).code(500);
@@ -803,8 +817,9 @@ const getSentById = {
       if (!parsed.success) return h.response({ success: false, message: 'Invalid id' }).code(400);
       const { id } = parsed.data;
 
-      const data = await fetchSentById(id);
-      return h.response({ success: true, data }).code(200);
+  const { getSentWithNeighborsById } = require('../services/sentService');
+  const result = await getSentWithNeighborsById(id);
+  return h.response({ success: true, data: result }).code(200);
     } catch (err) {
       if (/Sent not found/i.test(err.message)) {
         return h.response({ success: false, message: 'Not found' }).code(404);

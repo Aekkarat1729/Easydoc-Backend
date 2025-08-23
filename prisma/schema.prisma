@@ -1,3 +1,13 @@
+model DefaultDocument {
+  id         Int      @id @default(autoincrement())
+  name       String
+  fileType   String
+  fileUrl    String
+  uploadedAt DateTime @default(now())
+
+  userId Int
+  user   User @relation(fields: [userId], references: [id])
+}
 // prisma/schema.prisma
 datasource db {
   provider = "postgresql"
@@ -38,10 +48,12 @@ model User {
   password    String
   role        Role     @default(USER)
   position    String?
+  profileImage String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   documents       Document[]
+  defaultDocuments DefaultDocument[]
   sentDocs        Sent[]              @relation("Sender")
   receivedDocs    Sent[]              @relation("Receiver")
   statusChanges   Sent[]              @relation("StatusBy")
