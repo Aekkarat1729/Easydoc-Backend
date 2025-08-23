@@ -30,6 +30,7 @@ function ensureFirebaseInit() {
       credential: admin.credential.cert(json),
       storageBucket: bucketName,
     });
+    return;
   } else if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
     // ใช้ไฟล์ service account โดยอ้างจากพาธใน .env
     const credPath = process.env.GOOGLE_APPLICATION_CREDENTIALS.replace(/\\/g, '/');
