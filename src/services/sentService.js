@@ -70,7 +70,22 @@ async function fetchDocumentsByIds(ids = []) {
   const unique = Array.from(new Set(ids.filter(Boolean)));
   if (!unique.length) return new Map();
   const docs = await prisma.document.findMany({ where: { id: { in: unique } } });
-  const map = new Map(docs.map(d => [d.id, d]));
+  // ดึงขนาดไฟล์จาก fileUrl (Content-Length)
+  async function getFileSize(fileUrl) {
+    try {
+      const res = await fetch(fileUrl, { method: 'HEAD' });
+      const size = res.headers.get('content-length');
+      return size ? Number(size) : null;
+    } catch {
+      return null;
+    }
+  }
+  // เพิ่ม fileSize ให้แต่ละ document
+  const docsWithSize = await Promise.all(docs.map(async d => {
+    const fileSize = d.fileUrl ? await getFileSize(d.fileUrl) : null;
+    return { ...d, fileSize };
+  }));
+  const map = new Map(docsWithSize.map(d => [d.id, d]));
   return map;
 }
 
@@ -117,12 +132,13 @@ const sendDocument = async (data) => {
 /** ดึงการส่งเอกสารตาม id (รวม document/sender/receiver + documents[] จาก array) */
 const getSentById = async (id) => {
   try {
+    // ดึงข้อมูล base (ที่เราได้รับ)
     const record = await prisma.sent.findUnique({
       where: { id: Number(id) },
       include: {
         document: true,
-        sender:  { select: { id: true, email: true, firstName: true, lastName: true } },
-        receiver:{ select: { id: true, email: true, firstName: true, lastName: true } },
+        sender:  { select: { id: true, email: true, firstName: true, lastName: true, position: true, profileImage: true } },
+        receiver:{ select: { id: true, email: true, firstName: true, lastName: true, position: true, profileImage: true } },
       }
     });
     if (!record) throw new Error('Sent not found');
@@ -132,8 +148,33 @@ const getSentById = async (id) => {
     const documents = (record.documentIds?.length ? record.documentIds : [record.documentId])
       .map(id => map.get(id))
       .filter(Boolean);
+  // เพิ่ม isReply ให้ current
+  const isReplyCurrent = await hasReplyInThread(record.threadId ?? record.id);
+  const current = { ...record, documents, isReply: isReplyCurrent };
 
-    return { ...record, documents };
+    // ดึง actions: children ที่ parentSentId = current.id (reply หรือ forward)
+    const children = await prisma.sent.findMany({
+      where: { parentSentId: record.id },
+      include: {
+        document: true,
+        sender: { select: { id: true, email: true, firstName: true, lastName: true, position: true, profileImage: true } },
+        receiver: { select: { id: true, email: true, firstName: true, lastName: true, position: true, profileImage: true } },
+      },
+      orderBy: { sentAt: 'asc' }
+    });
+    // แนบ documents และ isReply ให้ทุก node
+    const allDocIds = new Set();
+    children.forEach(n => {
+      const ids = (n.documentIds?.length ? n.documentIds : [n.documentId]) || [];
+      ids.forEach(v => allDocIds.add(v));
+    });
+    const docMap = await fetchDocumentsByIds(Array.from(allDocIds));
+    const actions = await Promise.all(children.map(async n => ({
+      ...n,
+      documents: (n.documentIds?.length ? n.documentIds : [n.documentId]).map(id => docMap.get(id)).filter(Boolean),
+      isReply: await hasReplyInThread(n.threadId ?? n.id)
+    })));
+    return { current, actions };
   } catch (err) {
     throw new Error('Failed to fetch sent: ' + err.message);
   }
@@ -259,6 +300,6 @@ module.exports = {
   getSentById,
   getSentByIdWithChain,
   replyDocument,
-  hasReplyInThread
-  ,getSentWithNeighborsById
+  hasReplyInThread,
+  getSentWithNeighborsById
 };
