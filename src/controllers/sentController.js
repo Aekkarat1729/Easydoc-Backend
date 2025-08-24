@@ -1045,7 +1045,61 @@ const getSentById = {
         const rcv = await prisma.user.findUnique({ where: { id: receiver.id }, select: { position: true, profileImage: true } });
         if (rcv) receiver = { ...receiver, position: rcv.position, profileImage: rcv.profileImage };
       }
-      return h.response({ success: true, data: { ...record, documents: docsWithSize, document: docSingle, sender, receiver } }).code(200);
+      // ดึง action จริง ๆ ที่เกี่ยวข้องกับผู้ใช้ (reply/forward) แบบเต็ม record
+      const userId = request.auth?.credentials?.userId;
+      let actions = [];
+      let isReply = false;
+      // ดึง sent ทั้งหมดใน thread (ยกเว้นตัวเอง) เพื่อให้ actions ของ base record แสดงทุก action ที่เกี่ยวข้อง
+      const sentThread = await prisma.sent.findMany({
+        where: {
+          threadId: record.threadId,
+          id: { not: record.id }
+        },
+        include: {
+          document: true,
+          sender:  { select: { id: true, email: true, firstName: true, lastName: true, position: true, profileImage: true } },
+          receiver:{ select: { id: true, email: true, firstName: true, lastName: true, position: true, profileImage: true } },
+        },
+        orderBy: { sentAt: 'asc' }
+      });
+      // enrich documents, fileSize, kind
+      async function enrichNode(node) {
+        const docIds = node.documentIds?.length ? node.documentIds : [node.documentId];
+        const docs = await prisma.document.findMany({ where: { id: { in: docIds } } });
+        const docsWithSize = await Promise.all(docs.map(async d => {
+          try {
+            const res = await fetch(d.fileUrl, { method: 'HEAD' });
+            const size = res.headers.get('content-length');
+            return { ...d, fileSize: size ? Number(size) : null };
+          } catch { return { ...d, fileSize: null }; }
+        }));
+        let docSingle = node.document;
+        if (docSingle && docSingle.id) {
+          const found = docsWithSize.find(d => d.id === docSingle.id);
+          if (found) docSingle = { ...docSingle, fileSize: found.fileSize };
+        }
+        let sender = node.sender;
+        let receiver = node.receiver;
+        if (sender && sender.id) {
+          const s = await prisma.user.findUnique({ where: { id: sender.id }, select: { position: true, profileImage: true } });
+          if (s) sender = { ...sender, position: s.position, profileImage: s.profileImage };
+        }
+        if (receiver && receiver.id) {
+          const rcv = await prisma.user.findUnique({ where: { id: receiver.id }, select: { position: true, profileImage: true } });
+          if (rcv) receiver = { ...receiver, position: rcv.position, profileImage: rcv.profileImage };
+        }
+        // kind
+        const kind = node.parentSentId == null ? 'root' : (node.isForwarded ? 'forward' : 'reply');
+        return { ...node, documents: docsWithSize, document: docSingle, sender, receiver, kind };
+      }
+  // filter เฉพาะ action ที่ user เป็น sender หรือ receiver และไม่ใช่ base record (kind !== 'root')
+  const enrichedThread = await Promise.all(sentThread.map(enrichNode));
+  actions = enrichedThread.filter(x => x.kind !== 'root');
+  // isReply: ถ้ามี action ที่ kind === 'reply' ใน actions ให้เป็น true
+  isReply = actions.some(a => a.kind === 'reply');
+      // ลบ global หลังใช้เสร็จ
+      delete global._currentUserId;
+  return h.response({ success: true, isReply, data: { ...record, documents: docsWithSize, document: docSingle, sender, receiver, actions } }).code(200);
     } catch (err) {
       if (/Sent not found/i.test(err.message)) {
         return h.response({ success: false, message: 'Not found' }).code(404);
