@@ -862,9 +862,9 @@ const getInbox = {
       const withDocs = await Promise.all(inboxDocuments.map(enrichNode));
       const withKind = await Promise.all(
         withDocs.map(async (x) => {
-          const kind = x.parentSentId == null ? 'root' : (x.isForwarded ? 'forward' : 'reply');
-          const isReply = await require('../services/sentService').hasReplyInThread(x.threadId);
-          return { ...x, kind, isReply };
+            const kind = x.parentSentId == null ? 'root' : (x.isForwarded ? 'forward' : 'reply');
+            const isReply = await require('../services/sentService').hasReplyInThread(x.threadId);
+            return { ...x, kind, isReply, isForward: x.isForwarded };
         })
       );
       return h.response({ success: true, data: withKind }).code(200);
