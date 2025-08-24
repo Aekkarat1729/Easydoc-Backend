@@ -1049,11 +1049,10 @@ const getSentById = {
       const userId = request.auth?.credentials?.userId;
       let actions = [];
       let isReply = false;
-      // ดึง sent ทั้งหมดใน thread (ยกเว้นตัวเอง) เพื่อให้ actions ของ base record แสดงทุก action ที่เกี่ยวข้อง
+      // ดึง action แค่ขั้นเดียว (เฉพาะที่ parentSentId = base id)
       const sentThread = await prisma.sent.findMany({
         where: {
-          threadId: record.threadId,
-          id: { not: record.id }
+          parentSentId: record.id
         },
         include: {
           document: true,
