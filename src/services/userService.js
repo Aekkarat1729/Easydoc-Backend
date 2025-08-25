@@ -34,7 +34,7 @@ function sanitizeUser(user) {
 const getUsersForOfficer = async () => {
   try {
     const users = await prisma.user.findMany({
-  select: { id: true, email: true, firstName: true, lastName: true, position: true, profileImage: true }
+  select: { id: true, email: true, firstName: true, lastName: true, position: true, profileImage: true ,position: true,profileImage: true}
     });
     return users;
   } catch (err) {

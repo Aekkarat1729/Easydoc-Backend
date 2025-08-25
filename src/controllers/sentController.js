@@ -804,6 +804,7 @@ const getAllMail = {
   }
 };
 
+// ...existing code...
 const getInbox = {
   auth: 'jwt',
   tags: ['api', 'sent'],
@@ -864,7 +865,11 @@ const getInbox = {
         withDocs.map(async (x) => {
             const kind = x.parentSentId == null ? 'root' : (x.isForwarded ? 'forward' : 'reply');
             const isReply = await require('../services/sentService').hasReplyInThread(x.threadId);
-            return { ...x, kind, isReply, isForward: x.isForwarded };
+            // อัพเดท isForward แบบ dynamic: ถ้ามีการส่งต่อใหม่ ๆ จะเป็น true
+            const hasForward = await prisma.sent.findFirst({
+              where: { parentSentId: x.id, isForwarded: true }
+            });
+            return { ...x, kind, isReply, isForward: !!hasForward };
         })
       );
       return h.response({ success: true, data: withKind }).code(200);
@@ -874,6 +879,7 @@ const getInbox = {
     }
   }
 };
+// ...existing code...
 
 const getSentMail = {
   auth: 'jwt',
