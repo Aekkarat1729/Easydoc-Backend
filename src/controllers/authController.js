@@ -54,6 +54,8 @@ const loginUser = {
         role: user.role,        // string: 'ADMIN'|'OFFICER'|'USER' (เก็บไว้ด้วย)
         roleNumber,             // number: 1|2|3 เพื่อ frontend ใช้ง่าย
         email: user.email,
+        position: user.position,
+        profileImage: user.profileImage,
         token
       });
     } catch (err) {
