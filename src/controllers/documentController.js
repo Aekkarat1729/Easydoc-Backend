@@ -112,6 +112,7 @@ const uploadDocument = {
   validate: { payload: validateZod(documentSchema) },
   handler: async (request, h) => {
     const tempFile = request.payload?.file;
+    const nameInput = request.payload?.name;
     try {
       const userId = request.auth.credentials.userId;
       const file = tempFile;
@@ -149,9 +150,12 @@ const uploadDocument = {
         file.headers?.['content-type'] || guessContentType(fileType);
       const fileUrl = await uploadToFirebase(file.path, destPath, contentType);
 
+      // ถ้าไม่ได้ใส่ name ให้ใช้ชื่อไฟล์ (baseName)
+      const documentName = nameInput && nameInput.trim() ? nameInput.trim() : baseName;
+
       // บันทึก DB ผ่าน Prisma
       const documentData = {
-        name: baseName,       // ชื่อไฟล์ไม่รวมนามสกุล (ใช้ตามเดิมของคุณ)
+        name: documentName,  // ใช้ name ที่รับมา หรือชื่อไฟล์
         fileType: fileType,
         fileUrl,              // รูปใช้ <img>, PDF ใช้ Google Docs Viewer ฝั่ง frontend ได้
         userId,
@@ -168,6 +172,70 @@ const uploadDocument = {
       console.error('Error uploading document:', err);
       if (tempFile?.path) { try { fs.unlinkSync(tempFile.path); } catch (_) {} }
       return error(h, { success: false, message: err.message });
+    }
+  }
+};
+// ลบเอกสาร
+const deleteDocument = {
+  auth: 'jwt',
+  tags: ['api', 'documents'],
+  validate: { params: validateZod(idParamSchema) },
+  handler: async (request, h) => {
+    try {
+      const id = Number(request.params.id);
+      const doc = await prisma.document.findUnique({ where: { id } });
+      if (!doc) return notFound(h);
+      await prisma.document.delete({ where: { id } });
+      return success(h, { message: 'Document deleted', id });
+    } catch (err) {
+      return error(h, err.message);
+    }
+  }
+};
+
+// แก้ไขเอกสาร (ชื่อเอกสารหรือไฟล์ใหม่)
+const updateDocument = {
+  auth: 'jwt',
+  tags: ['api', 'documents'],
+  validate: { params: validateZod(idParamSchema) },
+  handler: async (request, h) => {
+    const tempFile = request.payload?.file;
+    const nameInput = request.payload?.name;
+    try {
+      const id = Number(request.params.id);
+      const doc = await prisma.document.findUnique({ where: { id } });
+      if (!doc) return notFound(h);
+
+      let fileUrl = doc.fileUrl;
+      let fileType = doc.fileType;
+      // ถ้ามีไฟล์ใหม่
+      if (tempFile && tempFile.path && tempFile.filename) {
+        const originalName = toSafeFileName(tempFile.filename);
+        const parts = originalName.split('.');
+        const ext = parts.length > 1 ? parts.pop() : '';
+        fileType = ext.toLowerCase();
+        if (!['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png'].includes(fileType)) {
+          throw new Error('Unsupported file type.');
+        }
+        const safeFileName = originalName;
+        const destPath = `uploads/update/${safeFileName}`;
+        const contentType = tempFile.headers?.['content-type'] || guessContentType(fileType);
+        fileUrl = await uploadToFirebase(tempFile.path, destPath, contentType);
+        try { fs.unlinkSync(tempFile.path); } catch (_) {}
+      }
+      // ถ้าไม่ได้ใส่ name ให้ใช้ชื่อไฟล์เดิม
+      const documentName = nameInput && nameInput.trim() ? nameInput.trim() : doc.name;
+      const updated = await prisma.document.update({
+        where: { id },
+        data: {
+          name: documentName,
+          fileType,
+          fileUrl,
+        }
+      });
+      return success(h, updated);
+    } catch (err) {
+      return error(h, err.message);
     }
   }
 };
@@ -190,4 +258,4 @@ const getDocumentById = {
   }
 };
 
-module.exports = { uploadDocument, getDocumentById };
+module.exports = { uploadDocument, getDocumentById, deleteDocument, updateDocument };

@@ -1,5 +1,26 @@
 const admin = require('../config/firebase');
-const { createDefaultDocument, getDefaultDocumentsByUser, getDefaultDocumentById } = require('../services/defaultDocumentService');
+const { createDefaultDocument, getDefaultDocumentsByUser, getDefaultDocumentById, deleteDefaultDocument, updateDefaultDocument } = require('../services/defaultDocumentService');
+const deleteDefaultDocumentHandler = async (request, h) => {
+  try {
+    const { id } = request.params;
+    await deleteDefaultDocument(id);
+    return h.response({ success: true, message: 'Deleted', id }).code(200);
+  } catch (err) {
+    return h.response({ success: false, message: err.message }).code(500);
+  }
+};
+
+const updateDefaultDocumentHandler = async (request, h) => {
+  try {
+    const { id } = request.params;
+    const { name } = request.payload;
+    // รองรับแก้ไขชื่อเอกสารเท่านั้น (ถ้าจะรองรับไฟล์ใหม่ ต้องเพิ่ม logic upload)
+    const updated = await updateDefaultDocument(id, { name });
+    return h.response({ success: true, data: updated }).code(200);
+  } catch (err) {
+    return h.response({ success: false, message: err.message }).code(500);
+  }
+};
 const path = require('path');
 
 const uploadDefaultDocument = async (request, h) => {
@@ -71,5 +92,7 @@ const getDefaultDocument = async (request, h) => {
 module.exports = {
   uploadDefaultDocument,
   listDefaultDocuments,
-  getDefaultDocument
+  getDefaultDocument,
+  deleteDefaultDocumentHandler,
+  updateDefaultDocumentHandler
 };

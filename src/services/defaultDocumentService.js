@@ -20,8 +20,21 @@ async function getDefaultDocumentById(id) {
   });
 }
 
+async function deleteDefaultDocument(id) {
+  return await prisma.defaultDocument.delete({ where: { id: Number(id) } });
+}
+
+async function updateDefaultDocument(id, data) {
+  return await prisma.defaultDocument.update({
+    where: { id: Number(id) },
+    data
+  });
+}
+
 module.exports = {
   createDefaultDocument,
   getDefaultDocumentsByUser,
-  getDefaultDocumentById
+  getDefaultDocumentById,
+  deleteDefaultDocument,
+  updateDefaultDocument
 };

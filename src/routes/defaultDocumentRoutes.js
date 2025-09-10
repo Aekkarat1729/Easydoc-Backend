@@ -1,4 +1,4 @@
-const { uploadDefaultDocument, listDefaultDocuments, getDefaultDocument } = require('../controllers/defaultDocumentController');
+const { uploadDefaultDocument, listDefaultDocuments, getDefaultDocument, deleteDefaultDocumentHandler, updateDefaultDocumentHandler } = require('../controllers/defaultDocumentController');
 
 module.exports = [
   {
@@ -30,5 +30,21 @@ module.exports = [
       auth: 'jwt',
       handler: getDefaultDocument
     }
-  }
+  },
+  {
+    method: 'DELETE',
+    path: '/defaultdocument/{id}',
+    options: {
+      auth: 'jwt',
+      handler: deleteDefaultDocumentHandler
+    }
+  },
+  {
+    method: 'PUT',
+    path: '/defaultdocument/{id}',
+    options: {
+      auth: 'jwt',
+      handler: updateDefaultDocumentHandler
+    }
+  },
 ];

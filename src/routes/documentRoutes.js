@@ -1,5 +1,5 @@
 // documentRoutes.js
-const { uploadDocument, getDocumentById } = require('../controllers/documentController');
+const { uploadDocument, getDocumentById, deleteDocument, updateDocument } = require('../controllers/documentController');
 
 module.exports = [
   {
@@ -21,5 +21,25 @@ module.exports = [
     method: 'GET',
     path: '/documents/{id}',
     options: getDocumentById
+  },
+  {
+    method: 'DELETE',
+    path: '/documents/{id}',
+    options: deleteDocument
+  },
+  {
+    method: 'PUT',
+    path: '/documents/{id}',
+    options: {
+      auth: 'jwt',
+      payload: {
+        maxBytes: 10 * 1024 * 1024,
+        output: 'file',
+        parse: true,
+        allow: 'multipart/form-data',
+        multipart: { output: 'file' }
+      },
+      handler: updateDocument.handler
+    }
   },
 ];
