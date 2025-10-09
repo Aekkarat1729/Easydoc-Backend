@@ -1,21 +1,18 @@
-// src/index.js
 require('dotenv').config();
 const Hapi = require('@hapi/hapi');
 const JWT = require('@hapi/jwt');
 const Inert = require('@hapi/inert');
+const { Server } = require('socket.io');
 
-/* ------------------------------ Routes ------------------------------ */
 const authRoutes = require('./routes/authRoutes');
 const documentRoutes = require('./routes/documentRoutes');
 const sentRoutes = require('./routes/sentRoutes');
 const userRoutes = require('./routes/userRoutes');
 const defaultDocumentRoutes = require('./routes/defaultDocumentRoutes');
+const notificationRoutes = require('./routes/notificationRoutes');
 
-/* ------------------------------ Helpers ------------------------------ */
-function parseOrigins(str) {
-  if (!str || str === '*') return ['*'];
-  return str.split(',').map(s => s.trim()).filter(Boolean);
-}
+const socketAuth = require('./middleware/socketAuth');
+const NotificationEmitter = require('./utils/notificationEmitter');
 
 const NODE_ENV = process.env.NODE_ENV || 'development';
 const PORT = Number(process.env.PORT) || 3000;
@@ -23,32 +20,31 @@ const HOST = process.env.HOST || (NODE_ENV === 'production' ? '0.0.0.0' : 'local
 const MAX_UPLOAD_MB = Number(process.env.MAX_UPLOAD_MB || 10);
 const CORS_ORIGINS = parseOrigins(process.env.CORS_ORIGINS || '*');
 
-// ถ้ามี '*' อยู่ ห้ามเปิด credentials (เบราว์เซอร์ไม่ยอม)
 const CORS_CREDENTIALS = !CORS_ORIGINS.includes('*');
 
+function parseOrigins(origins) {
+  if (!origins || origins === '*') return ['*'];
+  return origins.split(',').map(o => o.trim()).filter(Boolean);
+}
+
 async function init() {
-  const server = Hapi.server({
-    port: PORT,
-    host: HOST,
-    router: { stripTrailingSlash: true },
+  try {
+    const server = Hapi.server({
+      port: PORT,
+      host: HOST,
+      router: { stripTrailingSlash: true },
 
-    routes: {
-      /* ------------------------------- CORS ------------------------------- */
-      cors: {
-        // ตัวอย่าง .env: CORS_ORIGINS=https://app.example.com,http://localhost:5173
-        origin: CORS_ORIGINS,
-        credentials: CORS_CREDENTIALS,
-        // เฮดเดอร์ที่อนุญาตเพิ่มจากค่าปริยาย
-        additionalHeaders: ['accept', 'origin', 'x-requested-with'],
-        // เฮดเดอร์ฝั่ง response ที่อนุญาตให้ JS ฝั่งหน้าอ่านได้
-        additionalExposedHeaders: ['content-length', 'content-range'],
-        // อายุแคชของ preflight (วินาที)
-        maxAge: 86400
-      },
+      routes: {
+        cors: {
+          origin: CORS_ORIGINS,
+          credentials: CORS_CREDENTIALS,
+          additionalHeaders: ['accept', 'origin', 'x-requested-with'],
+          additionalExposedHeaders: ['content-length', 'content-range'],
+          maxAge: 86400
+        },
 
-      /* ------------------------------ Payload ----------------------------- */
       payload: {
-        maxBytes: MAX_UPLOAD_MB * 1024 * 1024, // 10MB โดยดีฟอลต์
+        maxBytes: MAX_UPLOAD_MB * 1024 * 1024,
         output: 'file',
         parse: true,
         multipart: { output: 'file' },
@@ -61,32 +57,38 @@ async function init() {
     }
   });
 
-  /* ------------------------------ Plugins ------------------------------ */
-  await server.register([JWT, Inert]);
+  try {
+    await server.register([JWT, Inert]);
+  } catch (error) {
+    throw error;
+  }
 
-  /* ----------------------------- JWT Strategy ---------------------------- */
-  server.auth.strategy('jwt', 'jwt', {
-    keys: process.env.JWT_SECRET || 'supersecret',
-    verify: {
-      aud: false,
-      iss: false,
-      sub: false,
-      nbf: true,
-      exp: true,
-      maxAgeSec: 14400, // 4 ชั่วโมง
-      timeSkewSec: 15
-    },
-    validate: (artifacts) => ({
-      isValid: true,
-      credentials: {
-        userId: artifacts.decoded.payload.userId,
-        role: artifacts.decoded.payload.role
+  try {
+    server.auth.strategy('jwt', 'jwt', {
+      keys: process.env.JWT_SECRET || 'supersecret',
+      verify: {
+        aud: false,
+        iss: false,
+        sub: false,
+        nbf: true,
+        exp: true,
+        maxAgeSec: 14400,
+        timeSkewSec: 15
+      },
+      validate: (artifacts) => {
+        return {
+          isValid: true,
+          credentials: {
+            userId: artifacts.decoded.payload.userId,
+            role: artifacts.decoded.payload.role
+          }
+        };
       }
-    })
-  });
-  // server.auth.default('jwt'); // ถ้าต้องการบังคับทุก route ให้ใช้ JWT
+    });
+  } catch (error) {
+    throw error;
+  }
 
-  /* ----------------------------- Health checks ---------------------------- */
   server.route({
     method: 'GET',
     path: '/',
@@ -101,7 +103,6 @@ async function init() {
     handler: () => 'pong'
   });
 
-  // Health endpoint for Docker HEALTHCHECK
   server.route({
     method: 'GET',
     path: '/health',
@@ -109,22 +110,15 @@ async function init() {
     handler: () => ({ status: 'ok number 1' })
   });
 
-  /* ----------------------------- App routes ------------------------------ */
-  console.log('📦 Registering routes...');
-    server.route([
+  server.route([
       ...authRoutes,
       ...documentRoutes,
       ...sentRoutes,
       ...userRoutes,
-      ...defaultDocumentRoutes
+      ...defaultDocumentRoutes,
+      ...notificationRoutes
     ]);
-  console.log('✅ Routes registered!');
-  console.log('🔗 Endpoint: POST   /defaultdocument/upload   (อัพโหลด DefaultDocument)');
-  console.log('🔗 Endpoint: GET    /defaultdocument          (ดู DefaultDocument ทั้งหมดของ user)');
-  console.log('🔗 Endpoint: GET    /defaultdocument/{id}     (ดู DefaultDocument รายการเดียว)');
 
-  /* ------------------------- Pretty print by tags ------------------------ */
-  console.log('📃 Routes loaded:');
   const routes = server.table();
   const grouped = routes.reduce((acc, r) => {
     const tags = r.settings?.tags || [];
@@ -135,11 +129,9 @@ async function init() {
     return acc;
   }, {});
   for (const [tag, list] of Object.entries(grouped)) {
-    console.log(`\n🔹 ${tag}:`);
     console.table(list);
   }
 
-  /* -------------------------- Unified error shape ------------------------ */
   server.ext('onPreResponse', (request, h) => {
     const res = request.response;
     if (res.isBoom) {
@@ -156,26 +148,70 @@ async function init() {
   });
 
   await server.start();
-  console.log(`🚀 Server running on ${server.info.uri} (env=${NODE_ENV})`);
 
-  /* --------------------------- Graceful shutdown ------------------------- */
+  try {
+
+    const io = new Server(server.listener, {
+      cors: {
+        origin: CORS_ORIGINS,
+        credentials: CORS_CREDENTIALS,
+        methods: ["GET", "POST"]
+      },
+      transports: ['websocket', 'polling']
+    });
+
+    io.use(socketAuth);
+
+    NotificationEmitter.setSocketIO(io);
+
+    io.on('connection', (socket) => {
+      const userId = socket.userId;
+      const userRole = socket.userRole;
+      
+      socket.join(`user_${userId}`);
+
+    socket.on('request_unread_count', async () => {
+      try {
+        await NotificationEmitter.updateUnreadCount(userId);
+      } catch (error) {
+      }
+    });
+
+    socket.on('disconnect', (reason) => {
+    });
+
+    socket.on('error', (error) => {
+    });
+  });
+
+  } catch (error) {
+    throw error;
+  }
+
   const shutdown = async (signal) => {
     try {
-      console.log(`\n🛑 Received ${signal}, stopping server...`);
+      io.close(() => {
+      });
+      
       await server.stop({ timeout: 10_000 });
-      console.log('✅ Server stopped gracefully');
       process.exit(0);
     } catch (err) {
-      console.error('❌ Error while stopping server:', err);
       process.exit(1);
     }
   };
   process.on('SIGINT', () => shutdown('SIGINT'));
   process.on('SIGTERM', () => shutdown('SIGTERM'));
+  
+  } catch (error) {
+    process.exit(1);
+  }
 }
 
 process.on('unhandledRejection', (err) => {
-  console.error('UNHANDLED REJECTION:', err);
+  process.exit(1);
+});
+
+process.on('uncaughtException', (err) => {
   process.exit(1);
 });
 

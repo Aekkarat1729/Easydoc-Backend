@@ -8,8 +8,8 @@ module.exports = [
     options: {
       auth: 'jwt',
       payload: {
-        maxBytes: 10 * 1024 * 1024, // 10MB
-        output: 'file',             // ให้ Hapi เขียนเป็นไฟล์ temp แล้วให้ path
+        maxBytes: 10 * 1024 * 1024, 
+        output: 'file',
         parse: true,
         allow: 'multipart/form-data',
         multipart: { output: 'file' }

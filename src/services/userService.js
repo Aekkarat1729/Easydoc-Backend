@@ -1,11 +1,8 @@
-// src/services/userService.js
 const bcrypt = require('bcryptjs');
 const { PrismaClient } = require('@prisma/client');
 const { mapRoleToNumber, mapNumberToRole } = require('../utils/roleMapper');
 
 const prisma = new PrismaClient();
-
-/* ------------------------------ Helpers ------------------------------ */
 
 function toEnumRole(input) {
   if (input == null) return undefined;
@@ -28,9 +25,6 @@ function sanitizeUser(user) {
   return { ...rest, role: user.role, roleNumber: mapRoleToNumber(user.role), position: user.position, profileImage: user.profileImage };
 }
 
-/* ------------------------------- Services ------------------------------- */
-
-// สำหรับ Officer/Admin ใช้กับ /userforofficer
 const getUsersForOfficer = async () => {
   try {
     const users = await prisma.user.findMany({
@@ -73,12 +67,7 @@ const getUserById = async (id) => {
 };
 
 const createUser = async ({ firstName, lastName, email, phoneNumber, password, role, position = '' }) => {
-  // หรือรับจาก destructuring parameter
-  // const { position = '' } = arguments[0];
-  // หรือถ้าแก้ parameter destructuring ให้รับ position ด้วย
-  // const createUser = async ({ firstName, lastName, email, phoneNumber, password, role, position = '' }) => {
-  // ...
-  // }
+
   if (!firstName || !lastName || !email || !phoneNumber || !password || role == null) {
     throw new Error('Missing required fields');
   }
@@ -139,7 +128,6 @@ const deleteUser = async (id) => {
   }
 };
 
-// ใช้ตอน login
 const getUserByEmail = async (email) => {
   try {
     const user = await prisma.user.findUnique({

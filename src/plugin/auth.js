@@ -5,7 +5,6 @@ const jwtPlugin = {
   options: {
     validate: async (decoded, request, h) => {
       const { role } = decoded;
-      // สามารถใช้ role ในการกำหนดสิทธิ์การเข้าถึง
       if (role !== 'ADMIN') {
         throw new Error('Unauthorized');
       }

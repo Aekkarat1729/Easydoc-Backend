@@ -1,4 +1,3 @@
-// src/plugin/prisma.js
 const { PrismaClient } = require('@prisma/client');
 
 exports.plugin = {

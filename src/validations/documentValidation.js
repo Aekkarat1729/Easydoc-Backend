@@ -1,9 +1,8 @@
-// documentValidation.js
 const { z } = require('zod');
 
 const documentSchema = z.object({
   file: z.object({
-    path: z.string().optional(),     // Hapi จะให้ path เมื่อ output: 'file'
+    path: z.string().optional(),
     filename: z.string().min(1, "Filename is required"),
     bytes: z.number().optional(),
     headers: z.object({}).optional()

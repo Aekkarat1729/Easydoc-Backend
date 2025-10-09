@@ -58,6 +58,7 @@ model User {
   receivedDocs    Sent[]              @relation("Receiver")
   statusChanges   Sent[]              @relation("StatusBy")
   statusHistories SentStatusHistory[] @relation("UserStatusHistory")
+  notifications   Notification[]      @relation("UserNotifications")
 }
 
 model Document {
@@ -129,4 +130,20 @@ model SentStatusHistory {
 
   sent      Sent @relation(fields: [sentId], references: [id], onDelete: Cascade)
   changedBy User @relation("UserStatusHistory", fields: [changedById], references: [id])
+}
+
+model Notification {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  type      String   // 'document_received', 'document_replied', 'document_forwarded', 'system_alert'
+  title     String
+  message   String
+  data      Json?    // ข้อมูลเพิ่มเติม เช่น documentId, sentId
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation("UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+  @@index([createdAt])
 }

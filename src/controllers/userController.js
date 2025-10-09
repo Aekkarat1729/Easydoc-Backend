@@ -6,7 +6,6 @@ const isOfficer = require('../utils/isOfficer');
 const admin = require('../config/firebase');
 const path = require('path');
 
-// Helper: Zod error response
 function replyZodError(h, zodError) {
   return h.response({
     success: false,
@@ -17,7 +16,6 @@ function replyZodError(h, zodError) {
   }).code(400);
 }
 
-// รายชื่อย่อ (ทุกโรล)
 const getUsersForOfficer = {
   auth: 'jwt',
   tags: ['api', 'users'],
@@ -31,7 +29,6 @@ const getUsersForOfficer = {
   }
 };
 
-// Admin: รายชื่อทั้งหมด
 const getAllUsers = {
   auth: 'jwt',
   tags: ['api', 'users'],
@@ -46,7 +43,6 @@ const getAllUsers = {
   }
 };
 
-// Get user by id
 const getUserById = {
   auth: 'jwt',
   tags: ['api', 'users'],
@@ -63,7 +59,6 @@ const getUserById = {
   }
 };
 
-// Create user
 const createUser = {
   auth: false,
   tags: ['api', 'users'],
@@ -84,7 +79,6 @@ const createUser = {
   }
 };
 
-// Update user
 const updateUser = {
   auth: 'jwt',
   tags: ['api', 'users'],
@@ -107,7 +101,6 @@ const updateUser = {
   }
 };
 
-// Delete user
 const deleteUser = {
   auth: 'jwt',
   tags: ['api', 'users'],
@@ -124,7 +117,6 @@ const deleteUser = {
   }
 };
 
-// Upload profile image
 const uploadProfileImage = {
   auth: 'jwt',
   tags: ['api', 'users'],

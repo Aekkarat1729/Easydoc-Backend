@@ -1,4 +1,3 @@
-// src/controllers/documentController.js
 require('dotenv').config();
 
 const fs = require('fs');
@@ -12,7 +11,6 @@ const { success, created, notFound, error } = require('../utils/responseFormatte
 
 const prisma = new PrismaClient();
 
-/* -------------------------- Firebase Initialization ------------------------- */
 function ensureFirebaseInit() {
   if (admin.apps.length) return;
 
@@ -22,7 +20,6 @@ function ensureFirebaseInit() {
   }
 
   if (process.env.FIREBASE_SA_BASE64) {
-    // ใช้ BASE64 หากตั้งไว้ใน .env
     const json = JSON.parse(
       Buffer.from(process.env.FIREBASE_SA_BASE64, 'base64').toString('utf8')
     );
@@ -32,7 +29,6 @@ function ensureFirebaseInit() {
     });
     return;
   } else if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
-    // ใช้ไฟล์ service account โดยอ้างจากพาธใน .env
     const credPath = process.env.GOOGLE_APPLICATION_CREDENTIALS.replace(/\\/g, '/');
     if (!fs.existsSync(credPath)) {
       throw new Error(`Service account file not found: ${credPath}`);
@@ -52,9 +48,6 @@ ensureFirebaseInit();
 
 const bucket = admin.storage().bucket(process.env.FIREBASE_STORAGE_BUCKET);
 
-/* --------------------------------- Helpers --------------------------------- */
-
-// ทำชื่อโฟลเดอร์ให้ปลอดภัย (รองรับไทย, ตัดอักขระควบคุม/ต้องห้าม, เว้นวรรค -> _)
 function toSafeFolderName(input, fallback) {
   if (!input) return fallback;
   const normalized = input.normalize('NFKC').replace(/[\u0000-\u001F\u007F]/g, '');
@@ -63,17 +56,12 @@ function toSafeFolderName(input, fallback) {
   return underscored || fallback;
 }
 
-// ทำชื่อไฟล์ให้ปลอดภัย (คงชื่อเดิมไว้มากที่สุด)
 function toSafeFileName(filename) {
-  // ตัด path ออกเผื่อบาง client ส่ง full path มา
   const base = path.basename(filename);
-  // อนุญาตเฉพาะอักษร/ตัวเลข/ไทย/เว้นวรรค/จุด/ขีด/ขีดล่าง
   const cleaned = base.normalize('NFKC').replace(/[^\p{L}\p{N} ._\-]/gu, '');
-  // กันชื่อว่างเปล่า
   return cleaned.trim() || 'file';
 }
 
-// เดา content-type จากนามสกุล (กันกรณี header ไม่มี)
 function guessContentType(ext) {
   switch (ext.toLowerCase()) {
     case 'pdf': return 'application/pdf';
@@ -86,7 +74,6 @@ function guessContentType(ext) {
   }
 }
 
-// อัปโหลดขึ้น Firebase Storage แล้วคืน public URL
 async function uploadToFirebase(localPath, destPath, contentType) {
   await bucket.upload(localPath, {
     destination: destPath,
@@ -98,14 +85,11 @@ async function uploadToFirebase(localPath, destPath, contentType) {
   });
 
   const file = bucket.file(destPath);
-  await file.makePublic(); // ให้เข้าถึงได้ทันทีผ่าน URL
+  await file.makePublic();
 
   return `https://storage.googleapis.com/${bucket.name}/${destPath}`;
 }
 
-/* -------------------------------- Handlers --------------------------------- */
-
-// อัปโหลดเอกสาร (คงชื่อไฟล์เดิม & โฟลเดอร์เป็นชื่อ-นามสกุลผู้ใช้)
 const uploadDocument = {
   auth: 'jwt',
   tags: ['api', 'documents'],
@@ -121,7 +105,6 @@ const uploadDocument = {
         throw new Error('Failed to upload document: No file uploaded.');
       }
 
-      // แยกชื่อ–นามสกุลไฟล์
       const originalName = toSafeFileName(file.filename);
       const parts = originalName.split('.');
       const ext = parts.length > 1 ? parts.pop() : '';
@@ -132,7 +115,6 @@ const uploadDocument = {
         throw new Error('Unsupported file type.');
       }
 
-      // ดึงชื่อ–นามสกุลผู้ใช้จากฐานข้อมูล (ปรับ fields ให้ตรง schema ของคุณ)
       const user = await prisma.user.findUnique({
         where: { id: userId },
         select: { firstName: true, lastName: true },
@@ -141,41 +123,34 @@ const uploadDocument = {
       const fullNameRaw = [user?.firstName, user?.lastName].filter(Boolean).join(' ').trim();
       const folderName = toSafeFolderName(fullNameRaw, String(userId));
 
-      // ✅ คงชื่อไฟล์เดิมใน Firebase (เช่น "Aekkarat.pdf")
-      const safeFileName = originalName; // ผ่าน toSafeFileName แล้ว
+      const safeFileName = originalName;
       const destPath = `uploads/${folderName}/${safeFileName}`;
 
-      // อัปโหลดไป Firebase Storage
       const contentType =
         file.headers?.['content-type'] || guessContentType(fileType);
       const fileUrl = await uploadToFirebase(file.path, destPath, contentType);
 
-      // ถ้าไม่ได้ใส่ name ให้ใช้ชื่อไฟล์ (baseName)
       const documentName = nameInput && nameInput.trim() ? nameInput.trim() : baseName;
 
-      // บันทึก DB ผ่าน Prisma
       const documentData = {
-        name: documentName,  // ใช้ name ที่รับมา หรือชื่อไฟล์
+        name: documentName,
         fileType: fileType,
-        fileUrl,              // รูปใช้ <img>, PDF ใช้ Google Docs Viewer ฝั่ง frontend ได้
+        fileUrl,
         userId,
         uploadedAt: new Date(),
       };
 
       const document = await prisma.document.create({ data: documentData });
 
-      // ลบ temp file
       try { fs.unlinkSync(file.path); } catch (_) {}
 
       return created(h, document);
     } catch (err) {
-      console.error('Error uploading document:', err);
       if (tempFile?.path) { try { fs.unlinkSync(tempFile.path); } catch (_) {} }
       return error(h, { success: false, message: err.message });
     }
   }
 };
-// ลบเอกสาร
 const deleteDocument = {
   auth: 'jwt',
   tags: ['api', 'documents'],
@@ -193,7 +168,6 @@ const deleteDocument = {
   }
 };
 
-// แก้ไขเอกสาร (ชื่อเอกสารหรือไฟล์ใหม่)
 const updateDocument = {
   auth: 'jwt',
   tags: ['api', 'documents'],
@@ -208,7 +182,6 @@ const updateDocument = {
 
       let fileUrl = doc.fileUrl;
       let fileType = doc.fileType;
-      // ถ้ามีไฟล์ใหม่
       if (tempFile && tempFile.path && tempFile.filename) {
         const originalName = toSafeFileName(tempFile.filename);
         const parts = originalName.split('.');
@@ -223,7 +196,6 @@ const updateDocument = {
         fileUrl = await uploadToFirebase(tempFile.path, destPath, contentType);
         try { fs.unlinkSync(tempFile.path); } catch (_) {}
       }
-      // ถ้าไม่ได้ใส่ name ให้ใช้ชื่อไฟล์เดิม
       const documentName = nameInput && nameInput.trim() ? nameInput.trim() : doc.name;
       const updated = await prisma.document.update({
         where: { id },
@@ -240,7 +212,6 @@ const updateDocument = {
   }
 };
 
-// ดึงเอกสารตาม ID
 const getDocumentById = {
   auth: 'jwt',
   tags: ['api', 'documents'],

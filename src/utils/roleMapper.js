@@ -1,4 +1,3 @@
-// src/utils/roleMapper.js
 const roleToNumber = {
   ADMIN: 1,
   OFFICER: 2,

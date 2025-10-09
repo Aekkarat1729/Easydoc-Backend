@@ -9,8 +9,6 @@ const getSentWithNeighborsById = async (id) => {
     }
   });
   if (!base) throw new Error('Sent not found');
-
-  // Parent (ก่อนหน้า)
   let parent = null;
   if (base.parentSentId) {
     parent = await prisma.sent.findUnique({
@@ -23,7 +21,6 @@ const getSentWithNeighborsById = async (id) => {
     });
   }
 
-  // Children (ต่อไป) เฉพาะ 1 ชั้น
   const children = await prisma.sent.findMany({
     where: { parentSentId: base.id },
     include: {
@@ -34,7 +31,6 @@ const getSentWithNeighborsById = async (id) => {
     orderBy: { sentAt: 'asc' }
   });
 
-  // แนบ documents ให้ทุก node
   const allDocIds = new Set();
   [base, ...(parent ? [parent] : []), ...children].forEach(n => {
     const ids = (n.documentIds?.length ? n.documentIds : [n.documentId]) || [];
@@ -46,7 +42,6 @@ const getSentWithNeighborsById = async (id) => {
     documents: (n.documentIds?.length ? n.documentIds : [n.documentId]).map(id => docMap.get(id)).filter(Boolean)
   });
 
-  // เพิ่ม isReply ให้แต่ละ node
   const hasReplyBase = base ? await hasReplyInThread(base.threadId ?? base.id) : false;
   const hasReplyParent = parent ? await hasReplyInThread(parent.threadId ?? parent.id) : false;
   const childrenWithIsReply = await Promise.all(
@@ -61,16 +56,13 @@ const getSentWithNeighborsById = async (id) => {
     children: childrenWithIsReply
   };
 };
-// src/services/sentService.js
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
-/* -------- helpers -------- */
 async function fetchDocumentsByIds(ids = []) {
   const unique = Array.from(new Set(ids.filter(Boolean)));
   if (!unique.length) return new Map();
   const docs = await prisma.document.findMany({ where: { id: { in: unique } } });
-  // ดึงขนาดไฟล์จาก fileUrl (Content-Length)
   async function getFileSize(fileUrl) {
     try {
       const res = await fetch(fileUrl, { method: 'HEAD' });
@@ -80,7 +72,7 @@ async function fetchDocumentsByIds(ids = []) {
       return null;
     }
   }
-  // เพิ่ม fileSize ให้แต่ละ document
+
   const docsWithSize = await Promise.all(docs.map(async d => {
     const fileSize = d.fileUrl ? await getFileSize(d.fileUrl) : null;
     return { ...d, fileSize };
@@ -89,14 +81,14 @@ async function fetchDocumentsByIds(ids = []) {
   return map;
 }
 
-/* -------- sendDocument (ใช้ตอน forward แบบเดิม) -------- */
+
 const sendDocument = async (data) => {
   try {
     if (data.isForwarded && data.parentSentId) {
       return await prisma.sent.create({
         data: {
           documentId: data.documentId,
-          documentIds: data.documentIds ?? [data.documentId], // ✅
+          documentIds: data.documentIds ?? [data.documentId], 
           senderId: data.senderId,
           receiverId: data.receiverId,
           number: data.number,
@@ -113,7 +105,7 @@ const sendDocument = async (data) => {
       return await prisma.sent.create({
         data: {
           documentId: data.documentId,
-          documentIds: data.documentIds ?? [data.documentId], // ✅
+          documentIds: data.documentIds ?? [data.documentId], 
           senderId: data.senderId,
           receiverId: data.receiverId,
           number: data.number,
@@ -129,10 +121,8 @@ const sendDocument = async (data) => {
   }
 };
 
-/** ดึงการส่งเอกสารตาม id (รวม document/sender/receiver + documents[] จาก array) */
 const getSentById = async (id) => {
   try {
-    // ดึงข้อมูล base (ที่เราได้รับ)
     const record = await prisma.sent.findUnique({
       where: { id: Number(id) },
       include: {
@@ -142,17 +132,12 @@ const getSentById = async (id) => {
       }
     });
     if (!record) throw new Error('Sent not found');
-
-    // แนบเอกสารทั้งหมดจาก documentIds
     const map = await fetchDocumentsByIds(record.documentIds?.length ? record.documentIds : [record.documentId]);
     const documents = (record.documentIds?.length ? record.documentIds : [record.documentId])
       .map(id => map.get(id))
       .filter(Boolean);
-  // เพิ่ม isReply ให้ current
   const isReplyCurrent = await hasReplyInThread(record.threadId ?? record.id);
   const current = { ...record, documents, isReply: isReplyCurrent };
-
-    // ดึง actions: children ที่ parentSentId = current.id (reply หรือ forward)
     const children = await prisma.sent.findMany({
       where: { parentSentId: record.id },
       include: {
@@ -162,7 +147,6 @@ const getSentById = async (id) => {
       },
       orderBy: { sentAt: 'asc' }
     });
-    // แนบ documents และ isReply ให้ทุก node
     const allDocIds = new Set();
     children.forEach(n => {
       const ids = (n.documentIds?.length ? n.documentIds : [n.documentId]) || [];
@@ -180,7 +164,6 @@ const getSentById = async (id) => {
   }
 };
 
-/** helper: มี reply ใน thread ไหม */
 const hasReplyInThread = async (rootThreadId) => {
   const count = await prisma.sent.count({
     where: { threadId: rootThreadId, parentSentId: { not: null }, isForwarded: false }
@@ -188,7 +171,6 @@ const hasReplyInThread = async (rootThreadId) => {
   return count > 0;
 };
 
-/** ดึง sent ตาม id พร้อม chain */
 const getSentByIdWithChain = async (id) => {
   const base = await prisma.sent.findUnique({
     where: { id: Number(id) },
@@ -219,7 +201,6 @@ const getSentByIdWithChain = async (id) => {
 
   const byId = new Map(withKind.map(x => [x.id, x]));
 
-  // ancestors
   const ancestors = [];
   let parentId = base.parentSentId;
   while (parentId) {
@@ -257,7 +238,6 @@ const getSentByIdWithChain = async (id) => {
 
   const fullChain = [...pathFromRoot, ...forwardsFromThis];
 
-  // ✅ แนบ documents ให้ทุก node จาก documentIds array (batch โหลดครั้งเดียว)
   const allDocIds = new Set();
   for (const n of fullChain) {
     const ids = (n.documentIds?.length ? n.documentIds : [n.documentId]) || [];
@@ -280,13 +260,12 @@ const getSentByIdWithChain = async (id) => {
     threadCount: thread.length,
     base: baseWithDocs,
     pathFromRoot: pathFromRootWithDocs,
-    forwardsFromThis: fullChainWithDocs.filter(x => x.parentSentId === base.id), // children of base
+    forwardsFromThis: fullChainWithDocs.filter(x => x.parentSentId === base.id),
     fullChain: fullChainWithDocs,
     hasReply,
   };
 };
 
-/** สร้างเรคคอร์ด "ตอบกลับ" */
 const replyDocument = async (data) => {
   try {
     return await prisma.sent.create({ data });

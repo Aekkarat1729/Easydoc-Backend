@@ -1,5 +1,7 @@
 const admin = require('../config/firebase');
 const { createDefaultDocument, getDefaultDocumentsByUser, getDefaultDocumentById, deleteDefaultDocument, updateDefaultDocument } = require('../services/defaultDocumentService');
+
+
 const deleteDefaultDocumentHandler = async (request, h) => {
   try {
     const { id } = request.params;
@@ -14,7 +16,6 @@ const updateDefaultDocumentHandler = async (request, h) => {
   try {
     const { id } = request.params;
     const { name } = request.payload;
-    // รองรับแก้ไขชื่อเอกสารเท่านั้น (ถ้าจะรองรับไฟล์ใหม่ ต้องเพิ่ม logic upload)
     const updated = await updateDefaultDocument(id, { name });
     return h.response({ success: true, data: updated }).code(200);
   } catch (err) {
@@ -37,7 +38,6 @@ const uploadDefaultDocument = async (request, h) => {
     const fileName = `${Date.now()}_${file.filename}`;
     const firebasePath = `defaultdocument/${fileName}`;
 
-    // Upload to Firebase Storage (ใช้ไฟล์ temp path แบบ document ปกติ)
     const bucket = admin.storage().bucket();
     await bucket.upload(file.path, {
       destination: firebasePath,
@@ -51,10 +51,7 @@ const uploadDefaultDocument = async (request, h) => {
     await blob.makePublic();
     const fileUrl = blob.publicUrl();
 
-    // ลบ temp file
     try { require('fs').unlinkSync(file.path); } catch (_) {}
-
-    // Save to DB
     const doc = await createDefaultDocument({
       name: file.filename,
       fileType,
@@ -63,7 +60,6 @@ const uploadDefaultDocument = async (request, h) => {
     });
     return h.response({ success: true, data: doc }).code(201);
   } catch (err) {
-    console.error('Error uploading default document:', err);
     return h.response({ success: false, message: err.message }).code(500);
   }
 };
