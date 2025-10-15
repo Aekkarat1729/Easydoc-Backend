@@ -25,17 +25,44 @@ class NotificationEmitter {
 
   static async notifyDocumentReceived(receiverId, senderName, documentTitle, sentId) {
     try {
-      const notification = await NotificationService.createNotification(
+      // ใช้ notification service ใหม่ที่รองรับการส่งอีเมล
+      const result = await NotificationService.createDocumentNotification(
         receiverId,
-        'document_received',
-        'มีเอกสารใหม่',
-        `${senderName} ส่งเอกสาร "${documentTitle}" มาให้คุณ`,
-        { sentId, type: 'document_received' }
+        null, // ไม่มี senderId ใน parameter เดิม
+        documentTitle,
+        'เอกสาร'
       );
       
-      await this.emitToUser(receiverId, notification);
-      return notification;
+      // ส่งแจ้งเตือนแบบ real-time ผ่าน socket
+      await this.emitToUser(receiverId, result.notification);
+      
+      console.log(`📄 Document notification sent to user ${receiverId} (${result.recipient.name})`);
+      return result.notification;
+      
     } catch (error) {
+      console.error('Error notifying document received:', error);
+      throw error;
+    }
+  }
+
+  // ฟังก์ชันใหม่สำหรับส่งแจ้งเตือนพร้อมอีเมล
+  static async notifyDocumentReceivedWithEmail(receiverId, senderId, documentTitle) {
+    try {
+      const result = await NotificationService.createDocumentNotification(
+        receiverId,
+        senderId,
+        documentTitle,
+        'เอกสาร'
+      );
+      
+      // ส่งแจ้งเตือนแบบ real-time ผ่าน socket
+      await this.emitToUser(receiverId, result.notification);
+      
+      console.log(`📄📧 Document notification with email sent to user ${receiverId} (${result.recipient.name})`);
+      return result;
+      
+    } catch (error) {
+      console.error('Error notifying document received with email:', error);
       throw error;
     }
   }

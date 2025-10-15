@@ -100,6 +100,8 @@ const sendDocument = async (data) => {
           forwarded: { connect: { id: data.parentSentId } },
           sentAt: new Date(),
         }
+
+
       });
     } else {
       return await prisma.sent.create({

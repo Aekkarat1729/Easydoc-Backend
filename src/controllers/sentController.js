@@ -63,6 +63,7 @@ function toSafeFolderName(input, fallback) {
   const underscored = cleaned.trim().replace(/\s+/g, '_');
   return underscored || fallback;
 }
+
 function toSafeFileName(filename) {
   const base = path.basename(filename);
   const cleaned = base.normalize('NFKC').replace(/[^\p{L}\p{N} ._\-]/gu, '');
@@ -160,7 +161,7 @@ const sendDocumentWithFile = {
 
       const senderUser = await prisma.user.findUnique({
         where: { id: senderId },
-        select: { firstName: true, lastName: true },
+        select: { firstName: true, lastName: true }, 
       });
       const fullNameRaw = [senderUser?.firstName, senderUser?.lastName].filter(Boolean).join(' ').trim();
       const folderName = toSafeFolderName(fullNameRaw, String(senderId));
@@ -234,13 +235,13 @@ const sendDocumentWithFile = {
       const isReply = await hasReplyInThread(created.id);
 
       try {
-        await NotificationEmitter.notifyDocumentReceived(
+        await NotificationEmitter.notifyDocumentReceivedWithEmail(
           receiverUser.id,
-          `${senderUser.firstName} ${senderUser.lastName}`,
-          description || subject || 'เอกสารใหม่',
-          created.id
+          senderId,
+          description || subject || 'เอกสารใหม่'
         );
       } catch (notifError) {
+        console.error('Failed to send notification:', notifError);
       }
 
       return h.response({

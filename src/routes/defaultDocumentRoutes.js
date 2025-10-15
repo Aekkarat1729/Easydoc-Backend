@@ -1,4 +1,4 @@
-const { uploadDefaultDocument, listDefaultDocuments, getDefaultDocument, deleteDefaultDocumentHandler, updateDefaultDocumentHandler } = require('../controllers/defaultDocumentController');
+const { uploadDefaultDocument, listDefaultDocuments, listAllDefaultDocuments, getDefaultDocument, deleteDefaultDocumentHandler, updateDefaultDocumentHandler } = require('../controllers/defaultDocumentController');
 
 module.exports = [
   {
@@ -20,7 +20,15 @@ module.exports = [
     path: '/defaultdocument',
     options: {
       auth: 'jwt',
-      handler: listDefaultDocuments
+      handler: listAllDefaultDocuments  // เปลี่ยนให้ใช้ listAllDefaultDocuments สำหรับ download page
+    }
+  },
+  {
+    method: 'GET',
+    path: '/defaultdocument/user',
+    options: {
+      auth: 'jwt',
+      handler: listDefaultDocuments  // endpoint ใหม่สำหรับ user-specific documents
     }
   },
   {

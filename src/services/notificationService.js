@@ -1,4 +1,5 @@
 const { PrismaClient } = require('@prisma/client');
+const emailService = require('./emailService');
 const prisma = new PrismaClient();
 
 class NotificationService {
@@ -33,6 +34,110 @@ class NotificationService {
       return notification;
     } catch (error) {
       console.error('Error creating notification:', error);
+      throw error;
+    }
+  }
+
+  // ฟังก์ชันใหม่สำหรับสร้างแจ้งเตือนเอกสารใหม่พร้อมส่งอีเมล
+  static async createDocumentNotification(recipientUserId, senderUserId, documentTitle, documentType = 'เอกสาร') {
+    try {
+      // ดึงข้อมูล recipient และ sender
+      const [recipient, sender] = await Promise.all([
+        prisma.user.findUnique({
+          where: { id: recipientUserId },
+          select: { id: true, firstName: true, lastName: true, email: true }
+        }),
+        prisma.user.findUnique({
+          where: { id: senderUserId },
+          select: { id: true, firstName: true, lastName: true, email: true }
+        })
+      ]);
+
+      if (!recipient || !sender) {
+        throw new Error('Recipient or sender not found');
+      }
+
+      const recipientName = `${recipient.firstName} ${recipient.lastName}`;
+      const senderName = `${sender.firstName} ${sender.lastName}`;
+
+      // สร้างแจ้งเตือนในระบบ
+      const notification = await this.createNotification(
+        recipientUserId,
+        'DOCUMENT_RECEIVED',
+        '📄 มีเอกสารใหม่เข้าระบบ',
+        `คุณได้รับเอกสาร "${documentTitle}" จาก ${senderName}`,
+        {
+          documentTitle,
+          documentType,
+          senderId: senderUserId,
+          senderName,
+          timestamp: new Date().toISOString()
+        }
+      );
+
+      // ส่งอีเมลแจ้งเตือน (แบบ async ไม่รอ)
+      emailService.sendDocumentNotification(
+        recipient.email,
+        recipientName,
+        documentTitle,
+        senderName,
+        documentType
+      ).then(result => {
+        if (result.success) {
+          console.log(`✅ Email notification sent to ${recipient.email}`);
+        } else {
+          console.error(`❌ Failed to send email to ${recipient.email}:`, result.error);
+        }
+      }).catch(error => {
+        console.error(`❌ Email notification error for ${recipient.email}:`, error);
+      });
+
+      return {
+        notification,
+        recipient: {
+          id: recipient.id,
+          name: recipientName,
+          email: recipient.email
+        },
+        sender: {
+          id: sender.id,
+          name: senderName,
+          email: sender.email
+        }
+      };
+
+    } catch (error) {
+      console.error('Error creating document notification:', error);
+      throw error;
+    }
+  }
+
+  // ส่งแจ้งเตือนหลายคนพร้อมกัน
+  static async createBulkDocumentNotifications(recipientUserIds, senderUserId, documentTitle, documentType = 'เอกสาร') {
+    try {
+      const results = [];
+
+      for (const recipientId of recipientUserIds) {
+        try {
+          const result = await this.createDocumentNotification(
+            recipientId,
+            senderUserId,
+            documentTitle,
+            documentType
+          );
+          results.push(result);
+        } catch (error) {
+          console.error(`Failed to create notification for user ${recipientId}:`, error);
+          results.push({
+            error: error.message,
+            recipientId
+          });
+        }
+      }
+
+      return results;
+    } catch (error) {
+      console.error('Error creating bulk document notifications:', error);
       throw error;
     }
   }

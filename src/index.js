@@ -148,16 +148,22 @@ async function init() {
   });
 
   await server.start();
+  console.log(`[SERVER] Server running on ${HOST}:${PORT} (${NODE_ENV})`);
+  console.log(`[SERVER] API URL: http://${HOST}:${PORT}`);
+  console.log(`[CORS] Allowed origins:`, CORS_ORIGINS);
+  console.log(`[CORS] Credentials:`, CORS_CREDENTIALS ? 'enabled' : 'disabled');
 
   try {
-
     const io = new Server(server.listener, {
       cors: {
         origin: CORS_ORIGINS,
         credentials: CORS_CREDENTIALS,
         methods: ["GET", "POST"]
       },
-      transports: ['websocket', 'polling']
+      transports: ['websocket', 'polling'],
+      allowEIO3: true,
+      pingTimeout: 60000,
+      pingInterval: 25000
     });
 
     io.use(socketAuth);
@@ -168,23 +174,33 @@ async function init() {
       const userId = socket.userId;
       const userRole = socket.userRole;
       
+      console.log(`[SOCKET] User ${userId} (${userRole}) connected successfully`);
       socket.join(`user_${userId}`);
 
-    socket.on('request_unread_count', async () => {
-      try {
-        await NotificationEmitter.updateUnreadCount(userId);
-      } catch (error) {
-      }
+      socket.on('request_unread_count', async () => {
+        try {
+          console.log(`[SOCKET] User ${userId} requested unread count`);
+          await NotificationEmitter.updateUnreadCount(userId);
+        } catch (error) {
+          console.error(`[SOCKET] Error updating unread count for user ${userId}:`, error);
+        }
+      });
+
+      socket.on('disconnect', (reason) => {
+        console.log(`[SOCKET] User ${userId} disconnected:`, reason);
+      });
+
+      socket.on('error', (error) => {
+        console.error(`[SOCKET] Socket error for user ${userId}:`, error);
+      });
     });
 
-    socket.on('disconnect', (reason) => {
+    io.on('error', (error) => {
+      console.error('[SOCKET] Server error:', error);
     });
-
-    socket.on('error', (error) => {
-    });
-  });
 
   } catch (error) {
+    console.error('[SOCKET] Failed to initialize Socket.IO server:', error);
     throw error;
   }
 
