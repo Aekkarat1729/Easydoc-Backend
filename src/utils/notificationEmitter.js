@@ -25,19 +25,20 @@ class NotificationEmitter {
 
   static async notifyDocumentReceived(receiverId, senderName, documentTitle, sentId) {
     try {
-      // ใช้ notification service ใหม่ที่รองรับการส่งอีเมล
-      const result = await NotificationService.createDocumentNotification(
+      // สร้าง notification แบบเดิม แต่เพิ่ม sentId ใน data
+      const notification = await NotificationService.createNotification(
         receiverId,
-        null, // ไม่มี senderId ใน parameter เดิม
-        documentTitle,
-        'เอกสาร'
+        'document_received',
+        'มีเอกสารใหม่',
+        `${senderName} ส่งเอกสาร "${documentTitle}" มาให้คุณ`,
+        { sentId, type: 'document_received' }
       );
       
       // ส่งแจ้งเตือนแบบ real-time ผ่าน socket
-      await this.emitToUser(receiverId, result.notification);
+      await this.emitToUser(receiverId, notification);
       
-      console.log(`📄 Document notification sent to user ${receiverId} (${result.recipient.name})`);
-      return result.notification;
+      console.log(`📄 Document notification sent to user ${receiverId} with sentId: ${sentId}`);
+      return notification;
       
     } catch (error) {
       console.error('Error notifying document received:', error);
@@ -46,7 +47,7 @@ class NotificationEmitter {
   }
 
   // ฟังก์ชันใหม่สำหรับส่งแจ้งเตือนพร้อมอีเมล
-  static async notifyDocumentReceivedWithEmail(receiverId, senderId, documentTitle) {
+  static async notifyDocumentReceivedWithEmail(receiverId, senderId, documentTitle, sentId) {
     try {
       const result = await NotificationService.createDocumentNotification(
         receiverId,
@@ -55,10 +56,19 @@ class NotificationEmitter {
         'เอกสาร'
       );
       
+      // เพิ่ม sentId ใน notification data
+      if (sentId && result.notification) {
+        const updatedNotification = await NotificationService.updateNotificationData(
+          result.notification.id,
+          { sentId, type: 'document_received' }
+        );
+        result.notification = updatedNotification || result.notification;
+      }
+      
       // ส่งแจ้งเตือนแบบ real-time ผ่าน socket
       await this.emitToUser(receiverId, result.notification);
       
-      console.log(`📄📧 Document notification with email sent to user ${receiverId} (${result.recipient.name})`);
+      console.log(`📄📧 Document notification with email sent to user ${receiverId} with sentId: ${sentId}`);
       return result;
       
     } catch (error) {

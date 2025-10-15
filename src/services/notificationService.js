@@ -169,6 +169,25 @@ class NotificationService {
 
   static async markAsRead(notificationId, userId) {
     try {
+      // ตรวจสอบว่า notification มีอยู่จริงและเป็นของ user หรือไม่
+      const existingNotification = await prisma.notification.findFirst({
+        where: { 
+          id: notificationId,
+          userId: userId 
+        }
+      });
+
+      if (!existingNotification) {
+        console.warn(`Notification ${notificationId} not found for user ${userId}`);
+        // return null หรือ throw error ตามต้องการ
+        return null;
+      }
+
+      if (existingNotification.isRead) {
+        console.log(`Notification ${notificationId} is already marked as read`);
+        return existingNotification;
+      }
+
       const notification = await prisma.notification.update({
         where: { 
           id: notificationId,
@@ -197,6 +216,22 @@ class NotificationService {
       return result;
     } catch (error) {
       console.error('Error marking all notifications as read:', error);
+      throw error;
+    }
+  }
+
+  static async updateNotificationData(notificationId, data) {
+    try {
+      const notification = await prisma.notification.update({
+        where: { id: notificationId },
+        data: { 
+          data: data ? JSON.stringify(data) : null 
+        }
+      });
+
+      return notification;
+    } catch (error) {
+      console.error('Error updating notification data:', error);
       throw error;
     }
   }

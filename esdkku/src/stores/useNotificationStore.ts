@@ -145,13 +145,73 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
       // รับ notification ใหม่
       socket.on('notification', (notification: AppNotification) => {
         console.log('📱 New notification received:', notification);
+        
+        // Parse notification data ถ้าเป็น string
+        let notificationData = notification.data;
+        if (typeof notificationData === 'string') {
+          try {
+            notificationData = JSON.parse(notificationData);
+            notification.data = notificationData; // อัปเดต notification object
+          } catch (error) {
+            console.error('Error parsing notification data:', error);
+            notificationData = null;
+          }
+        }
+        
         get().addNotification(notification);
         
-        // แสดง toast notification
+        // แสดง toast notification พร้อมฟังก์ชันนำทาง
         toast.info(notification.title, {
           onClick: () => {
-            // TODO: Navigate to notification detail
-            console.log('Notification clicked:', notification);
+            // นำทางไปยังเอกสารตาม notification data และ user role
+            if (notificationData && notificationData.sentId) {
+              const sentId = notificationData.sentId;
+              
+              // ดึง user role จาก localStorage หรือ global state
+              const userDataString = localStorage.getItem('user');
+              let userRole = 3; // default เป็น user
+              
+              if (userDataString) {
+                try {
+                  const userData = JSON.parse(userDataString);
+                  userRole = userData.role || 3;
+                } catch (error) {
+                  console.error('Error parsing user data:', error);
+                }
+              }
+              
+              // สร้าง URL สำหรับนำทางตาม role
+              let navigationUrl = '/ed/inbox';
+              
+              if (userRole === 2) {
+                // Officer ไปที่หน้าสถานะเอกสาร
+                navigationUrl = `/ed/document-status/track?id=${sentId}`;
+              } else {
+                // User ไปที่หน้ากล่องข้อความเอกสาร
+                navigationUrl = `/ed/inbox/doc?id=${sentId}`;
+              }
+              
+              console.log('🔔 Toast clicked, navigating to:', navigationUrl, 'for role:', userRole);
+              
+              // ใช้ window.location.href เพื่อนำทางเนื่องจากเราไม่สามารถใช้ router hook ได้ใน socket callback
+              window.location.href = navigationUrl;
+            } else {
+              // ไม่มี sentId ให้ไปหน้า default ตาม role
+              const userDataString = localStorage.getItem('user');
+              let userRole = 3;
+              
+              if (userDataString) {
+                try {
+                  const userData = JSON.parse(userDataString);
+                  userRole = userData.role || 3;
+                } catch (error) {
+                  console.error('Error parsing user data:', error);
+                }
+              }
+              
+              const defaultUrl = userRole === 2 ? '/ed/document-status' : '/ed/inbox';
+              window.location.href = defaultUrl;
+            }
           }
         });
       });
@@ -187,8 +247,25 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
       console.log('🔔 [FETCH] API Response:', response);
       
       if (response && response.success) {
-        console.log('🔔 [FETCH] Notifications loaded:', response.data?.length || 0);
-        set({ notifications: response.data });
+        // Parse notification data สำหรับ notifications ที่ fetch มา
+        const parsedNotifications = response.data.map((notification: AppNotification) => {
+          console.log('🔔 [FETCH] Processing notification:', notification.id, 'data:', notification.data);
+          
+          if (notification.data && typeof notification.data === 'string') {
+            try {
+              notification.data = JSON.parse(notification.data);
+              console.log('🔔 [FETCH] Parsed notification data for ID', notification.id, ':', notification.data);
+            } catch (error) {
+              console.error('Error parsing notification data for ID', notification.id, ':', error);
+            }
+          }
+          return notification;
+        });
+        
+        console.log('🔔 [FETCH] Notifications loaded:', parsedNotifications.length);
+        console.log('🔔 [FETCH] Sample notification data:', parsedNotifications[0]?.data);
+        console.log('🔔 [FETCH] All notifications:', parsedNotifications);
+        set({ notifications: parsedNotifications });
       } else {
         console.warn('🔔 [FETCH] Invalid response format:', response);
       }
@@ -214,9 +291,13 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
 
   markAsRead: async (id: number) => {
     try {
+      console.log('🔔 [MARK_READ] Attempting to mark notification as read:', id);
+      
       const response = await apiPut(`/notifications/${id}/read`) as { success: boolean; data: any };
       
       if (response && response.success) {
+        console.log('🔔 [MARK_READ] Successfully marked as read');
+        
         // อัปเดต local state
         const { notifications } = get();
         const updatedNotifications = notifications.map((n: AppNotification) => 
@@ -229,10 +310,39 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
           notifications: updatedNotifications,
           unreadCount: newUnreadCount
         });
+      } else {
+        console.warn('🔔 [MARK_READ] API returned success: false');
       }
-    } catch (error) {
-      console.error('Error marking notification as read:', error);
-      toast.error('ไม่สามารถทำเครื่องหมายว่าอ่านแล้วได้');
+    } catch (error: any) {
+      console.error('🔔 [MARK_READ] Error marking notification as read:', error);
+      
+      // ถ้าเป็น 404 (ไม่พบ notification) หรือ test notification ให้อัปเดต local state ได้เลย
+      if (error?.response?.status === 404 || id > 1000000000000) {
+        console.log('🔔 [MARK_READ] Notification not found in database or is test notification, updating local state only');
+        
+        const { notifications } = get();
+        const notificationToUpdate = notifications.find((n: AppNotification) => n.id === id);
+        
+        if (notificationToUpdate && !notificationToUpdate.isRead) {
+          const updatedNotifications = notifications.map((n: AppNotification) => 
+            n.id === id ? { ...n, isRead: true } : n
+          );
+          
+          const newUnreadCount = Math.max(0, get().unreadCount - 1);
+          
+          set({ 
+            notifications: updatedNotifications,
+            unreadCount: newUnreadCount
+          });
+          
+          console.log('🔔 [MARK_READ] Updated local state for test/missing notification');
+        }
+      } else {
+        // สำหรับ error อื่นๆ ที่ไม่ใช่ 404
+        console.error('🔔 [MARK_READ] Unexpected error:', error);
+      }
+      
+      // ไม่แสดง toast error เพื่อไม่รบกวน UX
     }
   },
 

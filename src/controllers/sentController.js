@@ -238,7 +238,8 @@ const sendDocumentWithFile = {
         await NotificationEmitter.notifyDocumentReceivedWithEmail(
           receiverUser.id,
           senderId,
-          description || subject || 'เอกสารใหม่'
+          description || subject || 'เอกสารใหม่',
+          created.id
         );
       } catch (notifError) {
         console.error('Failed to send notification:', notifError);

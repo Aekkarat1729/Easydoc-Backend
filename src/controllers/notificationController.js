@@ -67,7 +67,21 @@ const markAsRead = {
       const userId = request.auth.credentials.userId;
       const notificationId = Number(request.params.id);
 
+      if (!notificationId || isNaN(notificationId)) {
+        return h.response({
+          success: false,
+          message: 'Invalid notification ID'
+        }).code(400);
+      }
+
       const notification = await NotificationService.markAsRead(notificationId, userId);
+
+      if (!notification) {
+        return h.response({
+          success: false,
+          message: 'Notification not found or already read'
+        }).code(404);
+      }
 
       await NotificationEmitter.updateUnreadCount(userId);
 

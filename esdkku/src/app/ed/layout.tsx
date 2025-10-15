@@ -32,6 +32,7 @@ import { useRouter } from 'next/navigation';
 
 //config
 import { rootPath, menuItem } from '@/config/menu';
+import { PATHS } from '@/const/paths';
 import { toast } from 'react-toastify';
 
 
@@ -133,13 +134,88 @@ const AppLayout: React.FC<LayoutProps> = ({ children }) => {
     await deleteNotification(notificationId);
   };
 
+  const handleNotificationClick = async (notification: AppNotification) => {
+    console.log('🔔 Notification clicked:', notification);
+    console.log('🔔 Notification data (raw):', notification.data);
+    console.log('🔔 Notification type:', notification.type);
+    console.log('🔔 User role:', user?.role);
+    
+    // Parse notification data ถ้าเป็น string
+    let notificationData = notification.data;
+    if (typeof notificationData === 'string') {
+      try {
+        notificationData = JSON.parse(notificationData);
+        console.log('🔔 Parsed notification data:', notificationData);
+      } catch (error) {
+        console.error('🔔 Error parsing notification data:', error);
+        notificationData = null;
+      }
+    }
+    
+    // เรียก markAsRead แต่ไม่รอให้เสร็จ (fire and forget)
+    markAsRead(notification.id).catch(error => {
+      console.error('🔔 Failed to mark as read, but continuing with navigation:', error);
+    });
+    
+    // นำทางตาม role และ notification data
+    if (notificationData && notificationData.sentId) {
+      const sentId = notificationData.sentId;
+      const notificationType = notificationData.type || notification.type;
+      const userRole = user?.role || 3;
+      
+      console.log('🔔 Navigating with sentId:', sentId, 'type:', notificationType, 'userRole:', userRole);
+      
+      // ตรวจสอบ role เพื่อเลือกหน้าที่เหมาะสม
+      if (userRole === 2) {
+        // Officer (role 2) ไปที่หน้าสถานะเอกสาร
+        console.log('🔔 Officer: Navigating to document status track page');
+        router.push(`/${PATHS.ED}/${PATHS.DOCUMENT_STATUS}/track?id=${sentId}`);
+      } else {
+        // User (role 3) และอื่นๆ ไปที่หน้ากล่องข้อความเอกสาร
+        console.log('🔔 User: Navigating to inbox document page');
+        router.push(`/${PATHS.ED}/${PATHS.INBOX}/doc?id=${sentId}`);
+      }
+    } else {
+      // ลองหาข้อมูล ID จากที่อื่น
+      console.log('🔔 No sentId found in data, checking other fields...');
+      console.log('🔔 Full notification object:', JSON.stringify(notification, null, 2));
+      
+      // ลองดูว่ามี id ใน data หรือไม่
+      let documentId = null;
+      if (notificationData) {
+        documentId = notificationData.sentId || notificationData.id || notificationData.documentId;
+      }
+      
+      if (documentId) {
+        const userRole = user?.role || 3;
+        console.log('🔔 Found document ID:', documentId, 'for role:', userRole);
+        
+        if (userRole === 2) {
+          router.push(`/${PATHS.ED}/${PATHS.DOCUMENT_STATUS}/track?id=${documentId}`);
+        } else {
+          router.push(`/${PATHS.ED}/${PATHS.INBOX}/doc?id=${documentId}`);
+        }
+      } else {
+        console.log('🔔 No document ID found, navigating to role-based default page');
+        const userRole = user?.role || 3;
+        
+        // ไปที่หน้า default ตาม role
+        if (userRole === 2) {
+          router.push(`/${PATHS.ED}/${PATHS.DOCUMENT_STATUS}`);
+        } else {
+          router.push(`/${PATHS.ED}/${PATHS.INBOX}`);
+        }
+      }
+    }
+  };
+
   const notificationList: MenuProps['items'] = [
     ...(notifications && notifications.length > 0 
       ? notifications.slice(0, 5).map((notification: AppNotification, index: number) => ({
           key: `notification-${notification.id}`,
           label: (
             <div 
-              onClick={() => markAsRead(notification.id)}
+              onClick={() => handleNotificationClick(notification)}
               className={`relative p-3 hover:bg-gray-50 cursor-pointer border-b last:border-b-0 ${!notification.isRead ? 'bg-blue-50' : ''}`}
               style={{ maxWidth: '320px' }}
             >

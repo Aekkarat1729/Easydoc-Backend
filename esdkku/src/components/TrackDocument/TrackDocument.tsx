@@ -86,21 +86,18 @@ export default function TrackDocument() {
 				mode="alternate"
 				className="overflow-x-auto"
 				style={{ marginTop: "20px", padding: "10px" }}
-			>
-				{isSkeletonLoading
-					? Array.from({ length: 3 }).map((_, index) => (
-						<Timeline.Item key={index}>
+				items={isSkeletonLoading
+					? Array.from({ length: 3 }).map((_, index) => ({
+						children: (
 							<Card className="shadow-md rounded-xl w-full max-w-2xl">
 								<Skeleton active paragraph={{ rows: 4 }} />
 							</Card>
-						</Timeline.Item>
-					))
-					: documentTimeline?.map((item, index) => (
-						<Timeline.Item
-							key={index}
-							label={<span className="text-gray-500 text-sm">{item.timestamp}</span>}
-							position={index === 0 ? "left" : "right"}
-						>
+						)
+					}))
+					: documentTimeline?.map((item, index) => ({
+						label: <span className="text-gray-500 text-sm">{item.timestamp}</span>,
+						position: index === 0 ? "left" : "right",
+						children: (
 							<Card className="shadow-md rounded-xl w-full max-w-2xl">
 								<div className="flex flex-col gap-4">
 									{/* Status */}
@@ -169,9 +166,10 @@ export default function TrackDocument() {
 									)}
 								</div>
 							</Card>
-						</Timeline.Item>
-					))}
-			</Timeline>
+						)
+					}))
+				}
+			/>
 			{/* Current Holder */}
 			<div className="mt-5 p-4 border border-gray-200 rounded-xl shadow-md bg-white">
 				{isSkeletonLoading ? (
