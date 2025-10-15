@@ -1,0 +1,72 @@
+@import "tailwindcss";
+
+* {
+  font-family: "Noto Sans Thai Variable", sans-serif;
+  text-decoration: none;
+}
+
+:root {
+  --mainColor: #5955b3;
+  --mainTextColor: white;
+  --border-gray-custiom: #e5e7eb;
+}
+
+body {
+  background-color: var(--mainColor);
+}
+
+.text-custom-color-main {
+  color: var(--mainColor);
+}
+
+/* Notification Dropdown Styles */
+.notification-dropdown .ant-dropdown-menu {
+  max-height: 400px;
+  overflow-y: auto;
+  padding: 0;
+}
+
+.notification-dropdown .ant-dropdown-menu-item {
+  padding: 0;
+  height: auto;
+}
+
+.notification-dropdown .ant-dropdown-menu-item:hover {
+  background: transparent;
+}
+
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.bg-custom-color-main {
+  background-color: var(--mainColor);
+  color: #fff;
+}
+
+.custom-input-style {
+  @apply px-4 py-2 min-h-9 border border-gray-300 bg-white rounded-md;
+}
+
+.border-custom-color-main {
+  border-color: var(--mainColor);
+  @apply rounded-lg;
+}
+
+.border-custom {
+  border-color: var(--border-gray-custiom);
+  @apply border rounded-md;
+}
+
+.ring-custom-color-main {
+  @apply focus:outline-none focus:ring-2;
+  --tw-ring-color: var(--mainColor);
+}
+
+.custom-text-ellipsis {
+  @apply text-ellipsis whitespace-nowrap overflow-hidden
+}
