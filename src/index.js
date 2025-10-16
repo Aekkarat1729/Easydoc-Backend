@@ -158,15 +158,29 @@ async function init() {
       cors: {
         origin: CORS_ORIGINS,
         credentials: CORS_CREDENTIALS,
-        methods: ["GET", "POST"]
+        methods: ["GET", "POST", "OPTIONS"]
       },
-      transports: ['websocket', 'polling'],
+      // Allow polling first then websocket upgrade to be resilient across proxies
+      transports: ['polling', 'websocket'],
       allowEIO3: true,
       pingTimeout: 60000,
       pingInterval: 25000
     });
 
     io.use(socketAuth);
+
+    // engine.io low-level transport errors (helpful to log handshake errors)
+    try {
+      // engine is internal but present on io.
+      const engine = io?.engine;
+      if (engine && engine.on) {
+        engine.on('connection_error', (err) => {
+          console.error('[SOCKET][engine] connection_error:', err);
+        });
+      }
+    } catch (err) {
+      console.warn('[SOCKET] Could not attach engine error listener:', err);
+    }
 
     NotificationEmitter.setSocketIO(io);
 
