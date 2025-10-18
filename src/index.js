@@ -10,6 +10,7 @@ const sentRoutes = require('./routes/sentRoutes');
 const userRoutes = require('./routes/userRoutes');
 const defaultDocumentRoutes = require('./routes/defaultDocumentRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
+const dashboardRoutes = require('./routes/dashboardRoutes');
 
 const socketAuth = require('./middleware/socketAuth');
 const NotificationEmitter = require('./utils/notificationEmitter');
@@ -116,7 +117,8 @@ async function init() {
       ...sentRoutes,
       ...userRoutes,
       ...defaultDocumentRoutes,
-      ...notificationRoutes
+      ...notificationRoutes,
+      ...dashboardRoutes
     ]);
 
   const routes = server.table();
@@ -164,7 +166,10 @@ async function init() {
       transports: ['polling', 'websocket'],
       allowEIO3: true,
       pingTimeout: 60000,
-      pingInterval: 25000
+      pingInterval: 25000,
+      // เพิ่ม configuration เพื่อจัดการ error ดีขึ้น
+      connectTimeout: 30000,
+      upgradeTimeout: 30000
     });
 
     io.use(socketAuth);
@@ -175,7 +180,20 @@ async function init() {
       const engine = io?.engine;
       if (engine && engine.on) {
         engine.on('connection_error', (err) => {
-          console.error('[SOCKET][engine] connection_error:', err);
+          console.error('[SOCKET][engine] connection_error:', {
+            message: err.message,
+            description: err.description,
+            context: err.context,
+            type: err.type
+          });
+        });
+        
+        engine.on('initial_headers', (headers, request) => {
+          console.log('[SOCKET][engine] initial_headers for:', request.url);
+        });
+        
+        engine.on('headers', (headers, request) => {
+          console.log('[SOCKET][engine] headers for:', request.url);
         });
       }
     } catch (err) {
