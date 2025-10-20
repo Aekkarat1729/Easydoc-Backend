@@ -1,5 +1,5 @@
 const { PrismaClient } = require('@prisma/client');
-const emailService = require('./emailService');
+const { addEmailToQueue } = require('../queues/emailQueue');
 const prisma = new PrismaClient();
 
 class NotificationService {
@@ -75,24 +75,22 @@ class NotificationService {
         }
       );
 
-      // ส่งอีเมลแจ้งเตือน (รอให้ส่งเสร็จก่อน)
-      try {
-        const emailResult = await emailService.sendDocumentNotification(
-          recipient.email,
-          recipientName,
-          documentTitle,
-          senderName,
-          documentType
-        );
-
-        if (emailResult.success) {
-          console.log(`✅ Email notification sent to ${recipient.email}`);
+      // ส่งอีเมลผ่าน Queue (ไม่ต้องรอ - เร็วมาก!)
+      addEmailToQueue(
+        recipient.email,
+        recipientName,
+        documentTitle,
+        senderName,
+        documentType
+      ).then(result => {
+        if (result.success) {
+          console.log(`📋 Email job queued for ${recipient.email} (Job ID: ${result.jobId})`);
         } else {
-          console.error(`❌ Failed to send email to ${recipient.email}:`, emailResult.error);
+          console.error(`❌ Failed to queue email for ${recipient.email}:`, result.error);
         }
-      } catch (error) {
-        console.error(`❌ Email notification error for ${recipient.email}:`, error);
-      }
+      }).catch(error => {
+        console.error(`❌ Email queue error for ${recipient.email}:`, error);
+      });
 
       return {
         notification,

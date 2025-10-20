@@ -11,9 +11,11 @@ const userRoutes = require('./routes/userRoutes');
 const defaultDocumentRoutes = require('./routes/defaultDocumentRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes');
+const queueRoutes = require('./routes/queueRoutes');
 
 const socketAuth = require('./middleware/socketAuth');
 const NotificationEmitter = require('./utils/notificationEmitter');
+const { closeQueue } = require('./queues/emailQueue');
 
 const NODE_ENV = process.env.NODE_ENV || 'development';
 const PORT = Number(process.env.PORT) || 3000;
@@ -118,7 +120,8 @@ async function init() {
       ...userRoutes,
       ...defaultDocumentRoutes,
       ...notificationRoutes,
-      ...dashboardRoutes
+      ...dashboardRoutes,
+      ...queueRoutes
     ]);
 
   const routes = server.table();
@@ -238,12 +241,23 @@ async function init() {
 
   const shutdown = async (signal) => {
     try {
+      console.log(`\n[SHUTDOWN] Received ${signal}, closing gracefully...`);
+      
+      // ปิด Email Queue
+      await closeQueue();
+      
+      // ปิด Socket.IO
       io.close(() => {
+        console.log('[SHUTDOWN] Socket.IO closed');
       });
       
+      // ปิด Hapi Server
       await server.stop({ timeout: 10_000 });
+      console.log('[SHUTDOWN] Server stopped');
+      
       process.exit(0);
     } catch (err) {
+      console.error('[SHUTDOWN] Error during shutdown:', err);
       process.exit(1);
     }
   };
