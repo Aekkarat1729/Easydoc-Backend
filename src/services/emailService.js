@@ -1,17 +1,51 @@
 const nodemailer = require('nodemailer');
 
-// สร้าง transporter สำหรับ Gmail
+// ตรวจสอบว่าจะใช้ Email Service ไหน
+const EMAIL_PROVIDER = process.env.EMAIL_PROVIDER || 'gmail'; // 'gmail' หรือ 'sendgrid'
+
+// สร้าง transporter ตาม provider
 const createTransporter = () => {
-  return nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-      user: process.env.EMAIL_USER, // Gmail address
-      pass: process.env.EMAIL_PASSWORD // Gmail app password
-    },
-    tls: {
-      rejectUnauthorized: false
-    }
-  });
+  if (EMAIL_PROVIDER === 'sendgrid' && process.env.SENDGRID_API_KEY) {
+    console.log('📧 Using SendGrid for email delivery');
+    return nodemailer.createTransport({
+      host: 'smtp.sendgrid.net',
+      port: 587,
+      secure: false,
+      auth: {
+        user: 'apikey',
+        pass: process.env.SENDGRID_API_KEY
+      },
+      pool: true,
+      maxConnections: 5,
+      maxMessages: 100,
+      rateDelta: 1000,
+      rateLimit: 10,
+      connectionTimeout: 10000, // 10 วินาที
+      greetingTimeout: 5000,
+      socketTimeout: 20000 // 20 วินาที
+    });
+  } else {
+    console.log('📧 Using Gmail for email delivery');
+    return nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASSWORD
+      },
+      pool: true,
+      maxConnections: 5,
+      maxMessages: 100,
+      rateDelta: 1000,
+      rateLimit: 10,
+      connectionTimeout: 10000, // ลดจาก default (2 นาที)
+      greetingTimeout: 5000,
+      socketTimeout: 20000, // ลดจาก default (10 นาที)
+      tls: {
+        rejectUnauthorized: false,
+        minVersion: 'TLSv1.2'
+      }
+    });
+  }
 };
 
 // Template สำหรับแจ้งเตือนเอกสารใหม่
@@ -302,14 +336,21 @@ const createDocumentNotificationTemplate = (recipientName, documentTitle, sender
 
 // ฟังก์ชันส่งอีเมลแจ้งเตือนเอกสารใหม่
 const sendDocumentNotification = async (recipientEmail, recipientName, documentTitle, senderName, documentType = 'เอกสาร') => {
+  let transporter;
+  
   try {
-    const transporter = createTransporter();
+    transporter = createTransporter();
     const emailTemplate = createDocumentNotificationTemplate(recipientName, documentTitle, senderName, documentType);
+    
+    // กำหนด from email ตาม provider
+    const fromEmail = EMAIL_PROVIDER === 'sendgrid' 
+      ? (process.env.SENDGRID_FROM_EMAIL || process.env.EMAIL_USER)
+      : process.env.EMAIL_USER;
     
     const mailOptions = {
       from: {
         name: 'EasyDoc System',
-        address: process.env.EMAIL_USER
+        address: fromEmail
       },
       to: recipientEmail,
       subject: emailTemplate.subject,
@@ -318,20 +359,44 @@ const sendDocumentNotification = async (recipientEmail, recipientName, documentT
     };
 
     console.log(`Sending email notification to: ${recipientEmail}`);
-    const result = await transporter.sendMail(mailOptions);
+    
+    // ส่งเมลพร้อม timeout protection
+    const result = await Promise.race([
+      transporter.sendMail(mailOptions),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Email send timeout after 25s')), 25000)
+      )
+    ]);
     
     console.log('Email sent successfully:', result.messageId);
+    
+    // ปิด connection pool
+    transporter.close();
+    
     return {
       success: true,
       messageId: result.messageId,
-      recipient: recipientEmail
+      recipient: recipientEmail,
+      provider: EMAIL_PROVIDER
     };
     
   } catch (error) {
     console.error('Failed to send email notification:', error);
+    
+    // ปิด connection ถ้ามี
+    if (transporter) {
+      try {
+        transporter.close();
+      } catch (closeError) {
+        console.error('Error closing transporter:', closeError);
+      }
+    }
+    
     return {
       success: false,
-      error: error.message
+      error: error.message,
+      errorCode: error.code,
+      provider: EMAIL_PROVIDER
     };
   }
 };
