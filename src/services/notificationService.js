@@ -75,22 +75,24 @@ class NotificationService {
         }
       );
 
-      // ส่งอีเมลแจ้งเตือน (แบบ async ไม่รอ)
-      emailService.sendDocumentNotification(
-        recipient.email,
-        recipientName,
-        documentTitle,
-        senderName,
-        documentType
-      ).then(result => {
-        if (result.success) {
+      // ส่งอีเมลแจ้งเตือน (รอให้ส่งเสร็จก่อน)
+      try {
+        const emailResult = await emailService.sendDocumentNotification(
+          recipient.email,
+          recipientName,
+          documentTitle,
+          senderName,
+          documentType
+        );
+
+        if (emailResult.success) {
           console.log(`✅ Email notification sent to ${recipient.email}`);
         } else {
-          console.error(`❌ Failed to send email to ${recipient.email}:`, result.error);
+          console.error(`❌ Failed to send email to ${recipient.email}:`, emailResult.error);
         }
-      }).catch(error => {
+      } catch (error) {
         console.error(`❌ Email notification error for ${recipient.email}:`, error);
-      });
+      }
 
       return {
         notification,

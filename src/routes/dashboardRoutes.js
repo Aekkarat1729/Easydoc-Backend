@@ -1,6 +1,7 @@
 // src/routes/dashboardRoutes.js
-const { getDashboardData } = require('../controllers/dashboardController');
+const { getDashboardData, getOfficerDashboardData } = require('../controllers/dashboardController');
 
 module.exports = [
-  { method: 'GET', path: '/dashboard', options: getDashboardData }
+  { method: 'GET', path: '/dashboard', options: getDashboardData },
+  { method: 'GET', path: '/officer-dashboard', options: getOfficerDashboardData }
 ];
