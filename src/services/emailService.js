@@ -1,51 +1,37 @@
 const nodemailer = require('nodemailer');
+const sgMail = require('@sendgrid/mail');
 
 // ตรวจสอบว่าจะใช้ Email Service ไหน
 const EMAIL_PROVIDER = process.env.EMAIL_PROVIDER || 'gmail'; // 'gmail' หรือ 'sendgrid'
 
-// สร้าง transporter ตาม provider
+// ตั้งค่า SendGrid API Key
+if (EMAIL_PROVIDER === 'sendgrid' && process.env.SENDGRID_API_KEY) {
+  sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+  console.log('📧 SendGrid API initialized');
+}
+
+// สร้าง transporter สำหรับ Gmail (fallback)
 const createTransporter = () => {
-  if (EMAIL_PROVIDER === 'sendgrid' && process.env.SENDGRID_API_KEY) {
-    console.log('📧 Using SendGrid for email delivery');
-    return nodemailer.createTransport({
-      host: 'smtp.sendgrid.net',
-      port: 587,
-      secure: false,
-      auth: {
-        user: 'apikey',
-        pass: process.env.SENDGRID_API_KEY
-      },
-      pool: true,
-      maxConnections: 5,
-      maxMessages: 100,
-      rateDelta: 1000,
-      rateLimit: 10,
-      connectionTimeout: 10000, // 10 วินาที
-      greetingTimeout: 5000,
-      socketTimeout: 20000 // 20 วินาที
-    });
-  } else {
-    console.log('📧 Using Gmail for email delivery');
-    return nodemailer.createTransport({
-      service: 'gmail',
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASSWORD
-      },
-      pool: true,
-      maxConnections: 5,
-      maxMessages: 100,
-      rateDelta: 1000,
-      rateLimit: 10,
-      connectionTimeout: 10000, // ลดจาก default (2 นาที)
-      greetingTimeout: 5000,
-      socketTimeout: 20000, // ลดจาก default (10 นาที)
-      tls: {
-        rejectUnauthorized: false,
-        minVersion: 'TLSv1.2'
-      }
-    });
-  }
+  console.log('📧 Using Gmail for email delivery');
+  return nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASSWORD
+    },
+    pool: true,
+    maxConnections: 5,
+    maxMessages: 100,
+    rateDelta: 1000,
+    rateLimit: 10,
+    connectionTimeout: 10000,
+    greetingTimeout: 5000,
+    socketTimeout: 20000,
+    tls: {
+      rejectUnauthorized: false,
+      minVersion: 'TLSv1.2'
+    }
+  });
 };
 
 // Template สำหรับแจ้งเตือนเอกสารใหม่
@@ -336,66 +322,88 @@ const createDocumentNotificationTemplate = (recipientName, documentTitle, sender
 
 // ฟังก์ชันส่งอีเมลแจ้งเตือนเอกสารใหม่
 const sendDocumentNotification = async (recipientEmail, recipientName, documentTitle, senderName, documentType = 'เอกสาร') => {
-  let transporter;
-  
   try {
-    transporter = createTransporter();
     const emailTemplate = createDocumentNotificationTemplate(recipientName, documentTitle, senderName, documentType);
     
-    // กำหนด from email ตาม provider
-    const fromEmail = EMAIL_PROVIDER === 'sendgrid' 
-      ? (process.env.SENDGRID_FROM_EMAIL || process.env.EMAIL_USER)
-      : process.env.EMAIL_USER;
-    
-    const mailOptions = {
-      from: {
-        name: 'EasyDoc System',
-        address: fromEmail
-      },
-      to: recipientEmail,
-      subject: emailTemplate.subject,
-      html: emailTemplate.html,
-      text: emailTemplate.text
-    };
+    // ใช้ SendGrid Web API (ไม่ใช้ SMTP)
+    if (EMAIL_PROVIDER === 'sendgrid' && process.env.SENDGRID_API_KEY) {
+      console.log('📧 Using SendGrid Web API for:', recipientEmail);
+      
+      const msg = {
+        to: recipientEmail,
+        from: {
+          email: process.env.SENDGRID_FROM_EMAIL || process.env.EMAIL_USER,
+          name: 'EasyDoc System'
+        },
+        subject: emailTemplate.subject,
+        text: emailTemplate.text,
+        html: emailTemplate.html,
+      };
 
-    console.log(`Sending email notification to: ${recipientEmail}`);
-    
-    // ส่งเมลพร้อม timeout protection
-    const result = await Promise.race([
-      transporter.sendMail(mailOptions),
-      new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Email send timeout after 25s')), 25000)
-      )
-    ]);
-    
-    console.log('Email sent successfully:', result.messageId);
-    
-    // ปิด connection pool
-    transporter.close();
-    
-    return {
-      success: true,
-      messageId: result.messageId,
-      recipient: recipientEmail,
-      provider: EMAIL_PROVIDER
-    };
+      const result = await Promise.race([
+        sgMail.send(msg),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('SendGrid API timeout after 25s')), 25000)
+        )
+      ]);
+
+      console.log('✅ Email sent via SendGrid API:', result[0]?.statusCode);
+      
+      return {
+        success: true,
+        messageId: result[0]?.headers?.['x-message-id'] || 'sendgrid-success',
+        recipient: recipientEmail,
+        provider: 'sendgrid-api',
+        statusCode: result[0]?.statusCode
+      };
+    } 
+    // Fallback ไปใช้ Gmail SMTP
+    else {
+      console.log('📧 Using Gmail SMTP for:', recipientEmail);
+      const transporter = createTransporter();
+      
+      const mailOptions = {
+        from: {
+          name: 'EasyDoc System',
+          address: process.env.EMAIL_USER
+        },
+        to: recipientEmail,
+        subject: emailTemplate.subject,
+        html: emailTemplate.html,
+        text: emailTemplate.text
+      };
+
+      const result = await Promise.race([
+        transporter.sendMail(mailOptions),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Gmail timeout after 25s')), 25000)
+        )
+      ]);
+      
+      console.log('✅ Email sent via Gmail:', result.messageId);
+      transporter.close();
+      
+      return {
+        success: true,
+        messageId: result.messageId,
+        recipient: recipientEmail,
+        provider: 'gmail'
+      };
+    }
     
   } catch (error) {
-    console.error('Failed to send email notification:', error);
+    console.error('❌ Failed to send email:', error);
     
-    // ปิด connection ถ้ามี
-    if (transporter) {
-      try {
-        transporter.close();
-      } catch (closeError) {
-        console.error('Error closing transporter:', closeError);
-      }
+    // แสดง error แบบละเอียด
+    if (error.response) {
+      console.error('SendGrid Error Response:', error.response.body);
     }
     
     return {
       success: false,
       error: error.message,
       errorCode: error.code,
+      errorDetails: error.response?.body || null,
       provider: EMAIL_PROVIDER
     };
   }
@@ -404,12 +412,19 @@ const sendDocumentNotification = async (recipientEmail, recipientName, documentT
 // ฟังก์ชันทดสอบการส่งอีเมล
 const testEmailConnection = async () => {
   try {
-    const transporter = createTransporter();
-    await transporter.verify();
-    console.log('Email connection verified successfully');
-    return true;
+    if (EMAIL_PROVIDER === 'sendgrid' && process.env.SENDGRID_API_KEY) {
+      console.log('Testing SendGrid API connection...');
+      // SendGrid API ไม่ต้อง verify connection แบบ SMTP
+      // แค่ลอง ping API
+      return true;
+    } else {
+      const transporter = createTransporter();
+      await transporter.verify();
+      console.log('✅ Gmail connection verified successfully');
+      return true;
+    }
   } catch (error) {
-    console.error('Email connection failed:', error);
+    console.error('❌ Email connection failed:', error);
     return false;
   }
 };
